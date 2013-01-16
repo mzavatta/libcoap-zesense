@@ -2,6 +2,7 @@ libcoap
 port to Android's Bionic libc
 
 Original Author: Olaf Bergmann <bergmann@tzi.org>
+http://libcoap.sourceforge.net/
 libcoap is published as open-source software without any warranty of any kind.
 Use is permitted under the terms of the GNU General Public License (GPL), Version 2 or higher
 OR the revised BSD license.
