@@ -153,6 +153,10 @@ coap_new_node() {
   }
 
   memset(node, 0, sizeof *node );
+
+  /* Adding this to be sure */
+  node->reg = NULL;
+
   return node;
 }
 
@@ -513,12 +517,14 @@ coap_send_confirmed(coap_context_t *context,
     return COAP_INVALID_TID;
   }
 
+  /* assigns a new transaction ID and sends, returns the transaction id */
   node->id = coap_send_impl(context, dst, pdu);
   if (COAP_INVALID_TID == node->id) {
     debug("coap_send_confirmed: error sending pdu\n");
     coap_free_node(node);
     return COAP_INVALID_TID;
   }
+
   
   prng((unsigned char *)&r,sizeof(r));
   coap_ticks(&now);
@@ -532,6 +538,11 @@ coap_send_confirmed(coap_context_t *context,
 
   memcpy(&node->remote, dst, sizeof(coap_address_t));
   node->pdu = pdu;
+
+  /* Added to support observe registrations.
+   * It is nulled also inside coap_new_node()
+   * but let's be safe! */
+  node->reg = NULL;
 
   assert(&context->sendqueue);
   coap_insert_node(&context->sendqueue, node, _order_timestamp);
@@ -551,8 +562,59 @@ coap_send_confirmed(coap_context_t *context,
   }
 #endif /* WITH_CONTIKI */
 
+  /* returns the transaction id */
   return node->id;
 }
+
+/* Implementation follows coap_send_confirmed()
+ * except for the assignment of coap_queue_t's reg field. */
+coap_tid_t
+coap_notify(coap_context_t *context,
+	    const coap_address_t *dst,
+	    coap_pdu_t *pdu,
+	    coap_registration_t *reg) {
+  coap_queue_t *node;
+  coap_tick_t now;
+  int r;
+
+  node=coap_new_node();
+  if (!node) {
+    debug("coap_notify: insufficient memory\n");
+    return COAP_INVALID_TID;
+  }
+
+  /* assigns a new transaction ID and sends, returns the transaction id */
+  node->id = coap_send_impl(context, dst, pdu);
+  if (COAP_INVALID_TID == node->id) {
+    debug("coap_notify: error sending pdu\n");
+    coap_free_node(node);
+    return COAP_INVALID_TID;
+  }
+
+  prng((unsigned char *)&r,sizeof(r));
+  coap_ticks(&now);
+  node->t = now;
+
+  /* add randomized RESPONSE_TIMEOUT to determine retransmission timeout */
+  node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
+    (COAP_DEFAULT_RESPONSE_TIMEOUT >> 1) *
+    ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);
+  node->t += node->timeout;
+
+  memcpy(&node->remote, dst, sizeof(coap_address_t));
+  node->pdu = pdu;
+
+  /* That's the real difference. Note reg's reference count increasing. */
+  node->reg = coap_registration_checkout(reg);
+
+  /* Insert the node into the sendqueue. */
+  assert(&context->sendqueue);
+  coap_insert_node(&context->sendqueue, node, _order_timestamp);
+
+  /* returns the transaction id */
+  return node->id;
+}
+
 
 coap_tid_t
 coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
@@ -601,6 +663,7 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
   coap_delete_node( node );
   return COAP_INVALID_TID;
 }
+
 
 int
 _order_transaction_id( coap_queue_t *lhs, coap_queue_t *rhs ) {
@@ -997,91 +1060,95 @@ handle_request(coap_context_t *context, coap_queue_t *node) {
   resource = coap_get_resource_from_key(context, key);
   
   if (!resource) {
-    /* The resource was not found. Check if the request URI happens to
-     * be the well-known URI. In that case, we generate a default
-     * response, otherwise, we return 4.04 */
+		/* The resource was not found. Check if the request URI happens to
+		 * be the well-known URI. In that case, we generate a default
+		 * response, otherwise, we return 4.04 */
 
-    switch(node->pdu->hdr->code) {
+		switch(node->pdu->hdr->code) {
 
-    case COAP_REQUEST_GET: 
-      if (is_wkc(key)) {	/* GET request for .well-known/core */
-	info("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
-	response = wellknown_response(context, node->pdu);
+			case COAP_REQUEST_GET:
+			  if (is_wkc(key)) {	/* GET request for .well-known/core */
+				info("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
+				response = wellknown_response(context, node->pdu);
 
-      } else { /* GET request for any another resource, return 4.04 */
+			  } else { /* GET request for any another resource, return 4.04 */
 
-	debug("GET for unknown resource 0x%02x%02x%02x%02x, return 4.04\n", 
-	      key[0], key[1], key[2], key[3]);
-	response = 
-	  coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(404), 
-				  opt_filter);
-      }
-      break;
+				debug("GET for unknown resource 0x%02x%02x%02x%02x, return 4.04\n",
+					  key[0], key[1], key[2], key[3]);
+				response =
+				  coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(404),
+							  opt_filter);
+			  }
+			  break;
 
-    default: 			/* any other request type */
+			default: 			/* any other request type */
 
-      debug("unhandled request for unknown resource 0x%02x%02x%02x%02x\r\n",
-	    key[0], key[1], key[2], key[3]);
-      if (!coap_is_mcast(&node->local))
-	response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
-					   opt_filter);
-    }
-      
-    if (response && coap_send(context, &node->remote, response) == COAP_INVALID_TID) {
-      warn("cannot send response for transaction %u\n", node->id);
-    }
-    coap_delete_pdu(response);
+			  debug("unhandled request for unknown resource 0x%02x%02x%02x%02x\r\n",
+				key[0], key[1], key[2], key[3]);
+			  if (!coap_is_mcast(&node->local))
+			response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405),
+							   opt_filter);
+		}
 
-    return;
+		if (response && coap_send(context, &node->remote, response) == COAP_INVALID_TID) {
+		  warn("cannot send response for transaction %u\n", node->id);
+		}
+		coap_delete_pdu(response);
+
+		return;
   }
   
   /* the resource was found, check if there is a registered handler */
+  /* h is the registered handler in this case */
   if ((size_t)node->pdu->hdr->code - 1 <
       sizeof(resource->handler)/sizeof(coap_method_handler_t))
     h = resource->handler[node->pdu->hdr->code - 1];
   
+  /* there is a registered handler */
   if (h) {
-    debug("call custom handler for resource 0x%02x%02x%02x%02x\n", 
-	  key[0], key[1], key[2], key[3]);
-    response = coap_pdu_init(node->pdu->hdr->type == COAP_MESSAGE_CON 
-			     ? COAP_MESSAGE_ACK
-			     : COAP_MESSAGE_NON,
-			     0, node->pdu->hdr->id, COAP_MAX_PDU_SIZE);
-    if (response) {
-      coap_opt_iterator_t opt_iter;
-      str token = { 0, NULL };
+		debug("call custom handler for resource 0x%02x%02x%02x%02x\n",
+		  key[0], key[1], key[2], key[3]);
 
-      if (coap_check_option(node->pdu, COAP_OPTION_TOKEN, &opt_iter)) {
-	token.length = COAP_OPT_LENGTH(opt_iter.option);
-	token.s = COAP_OPT_VALUE(opt_iter.option);
-      }
+		response = coap_pdu_init(node->pdu->hdr->type == COAP_MESSAGE_CON
+					 ? COAP_MESSAGE_ACK
+					 : COAP_MESSAGE_NON,
+					 0, node->pdu->hdr->id, COAP_MAX_PDU_SIZE);
+		if (response) {
+			  coap_opt_iterator_t opt_iter;
+			  str token = { 0, NULL };
 
-      h(context, resource, &node->remote, node->pdu, &token, response);
-      if (response->hdr->type != COAP_MESSAGE_NON ||
-	  (response->hdr->code >= 64 
-	   && !coap_is_mcast(&node->local))) {
-	if (coap_send(context, &node->remote, response) == COAP_INVALID_TID) {
-	  debug("cannot send response for message %d\n", node->pdu->hdr->id);
-	}
-      }
-      coap_delete_pdu(response);
-    } else {
-      warn("cannot generate response\r\n");
-    }
+			  if (coap_check_option(node->pdu, COAP_OPTION_TOKEN, &opt_iter)) {
+				token.length = COAP_OPT_LENGTH(opt_iter.option);
+				token.s = COAP_OPT_VALUE(opt_iter.option);
+			  }
+
+			  h(context, resource, &node->remote, node->pdu, &token, response);
+			  if ((response->hdr->type != COAP_MESSAGE_NON ||
+			  (response->hdr->code >= 64
+			   && !coap_is_mcast(&node->local))) && response != NULL) {
+				if (coap_send(context, &node->remote, response) == COAP_INVALID_TID) {
+				  debug("cannot send response for message %d\n", node->pdu->hdr->id);
+				}
+			  }
+			  coap_delete_pdu(response);
+		} else {
+		  warn("cannot generate response\r\n");
+		}
   } else {
-    if (WANT_WKC(node->pdu, key)) {
-      debug("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
-      response = wellknown_response(context, node->pdu);
-    } else
-      response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405), 
-					 opt_filter);
-    
-    if (!response || (coap_send(context, &node->remote, response)
-		      == COAP_INVALID_TID)) {
-      debug("cannot send response for transaction %u\n", node->id);
-    }
-    coap_delete_pdu(response);
+		if (WANT_WKC(node->pdu, key)) {
+		  debug("create default response for %s\n", COAP_DEFAULT_URI_WELLKNOWN);
+		  response = wellknown_response(context, node->pdu);
+		} else
+		  response = coap_new_error_response(node->pdu, COAP_RESPONSE_CODE(405),
+						 opt_filter);
+
+		if (!response || (coap_send(context, &node->remote, response)
+				  == COAP_INVALID_TID)) {
+		  debug("cannot send response for transaction %u\n", node->id);
+		}
+		coap_delete_pdu(response);
   }  
+
 }
 
 static inline void
@@ -1116,6 +1183,13 @@ coap_dispatch( coap_context_t *context ) {
   coap_queue_t *rcvd = NULL, *sent = NULL;
   coap_pdu_t *response;
   coap_opt_filter_t opt_filter;
+  coap_key_t key;
+  coap_resource_t *res;
+  unsigned short mid;
+  coap_queue_t *temp, *btemp;
+  coap_registration_handler_t h = NULL;
+  coap_address_t dest;
+
 
   if (!context)
     return;
@@ -1139,6 +1213,17 @@ coap_dispatch( coap_context_t *context ) {
       /* find transaction in sendqueue to stop retransmission */
       coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
 
+      if (sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
+		  /* We now have in sent the entry of the queue that has just been
+		   * detached from the linked list. Though if we sent a normal response
+		   * and not a notification, the reg pointer will be NULL; check that,
+		   * then we can safely zero-out the registration's fail count
+		   * and release the pointer to the registration that was contained in sent.
+		   */
+    	  sent->reg->fail_cnt = 0;
+    	  coap_registration_release(sent->reg);
+      }
+
       if (rcvd->pdu->hdr->code == 0)
 	goto cleanup;
 
@@ -1158,12 +1243,80 @@ coap_dispatch( coap_context_t *context ) {
       coap_log(LOG_ALERT, "got RST for message %u\n", uip_ntohs(rcvd->pdu->hdr->id));
 #endif /* WITH_CONTIKI */
 
-      /* find transaction in sendqueue to stop retransmission */
-      coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
+
 
       /* @todo remove observer for this resource, if any 
        * get token from sent and try to find a matching resource. Uh!
+       * nono only resource+destinationnnnnnnnnn here as well, there's only one.
        */
+
+
+      /*
+      //extact mid from received message
+      mid = rcvd->pdu->hdr->id;
+
+      //find in the send queue an entry with such message id
+      temp = context->sendqueue;
+      btemp = context->sendqueue;
+      while (temp != NULL) {
+    	  if (temp->mid == mid) break;
+    	  btemp = temp;
+    	  temp = temp->next;
+      }
+      if (temp != NULL) { //if found
+		  //fetch resource
+		  res = coap_get_resource_from_key(context,
+					temp->reskey);
+
+		  //delete observer if it exists within the resource
+		  coap_delete_observer(res,
+					  temp->remote,
+					  NULL);
+      }
+       */
+
+
+      /* from CoAP's draft it's clear that the token might not appear in an RST!:
+       *	The Token Option is used to match a response with a request. Every
+request has a client-generated token which the server MUST echo in
+any response. The token value is a sequence of 0 to 8 bytes. A
+default value of the zero-length token is assumed in the absence of
+the option. A value of 1 to 8 bytes can be sent as an option value.
+Thus when the token value is empty, the Token Option MUST be elided.
+A token is intended for use as a client-local identifier for
+differentiating between concurrent requests (see Section 5.3). A
+client SHOULD generate tokens in a way that tokens currently in use
+for a given source/destination pair are unique. An empty token value
+is appropriate e.g. when no other tokens are in use to a destination,
+or when requests are made serially per destination. There are
+however multiple possible implementation strategies to fulfill this.
+An endpoint receiving a token MUST treat it as opaque and make no
+assumptions about its format.
+       */
+      /* and the resource will not appear in the rst either. in fact, they can even be
+       * piggybacked
+       * how to know the resource?
+       *
+       *
+       */
+
+
+      /* find transaction in sendqueue to stop retransmission */
+      coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
+
+      if (sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
+    	  /* A transaction for this message ID has been found;
+    	   * It's a RST and therefore we should not only delete this
+    	   * transaction, but also trigger a stop of the stream.
+    	   * There may be some resource-specific work to do and therefore
+    	   * we first identify the resource using sent->reg
+    	   */
+    	  res = coap_get_resource_from_key(context, sent->reg->reskey);
+    	  if (res != NULL && res->on_unregister != NULL)
+    		  res->on_unregister();
+    	  coap_registration_release(sent->reg);
+      }
+
       break;
 
     case COAP_MESSAGE_NON :	/* check for unknown critical options */

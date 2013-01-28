@@ -303,6 +303,8 @@ coap_delete_attr(coap_attr_t *attr) {
   coap_free(attr);
 }
 
+
+
 void
 coap_hash_request_uri(const coap_pdu_t *request, coap_key_t key) {
   coap_opt_iterator_t opt_iter;
@@ -318,6 +320,8 @@ coap_hash_request_uri(const coap_pdu_t *request, coap_key_t key) {
     coap_hash(COAP_OPT_VALUE(opt_iter.option), 
 	      COAP_OPT_LENGTH(opt_iter.option), key);
 }
+
+
 
 void
 coap_add_resource(coap_context_t *context, coap_resource_t *resource) {
@@ -444,7 +448,7 @@ coap_print_link(const coap_resource_t *resource,
 
 #ifndef WITHOUT_OBSERVE
 coap_subscription_t *
-coap_find_observer(coap_resource_t *resource, const coap_address_t *peer,
+coap_find_observer_wrong(coap_resource_t *resource, const coap_address_t *peer,
 		     const str *token) {
   coap_subscription_t *s;
 
@@ -465,8 +469,21 @@ coap_find_observer(coap_resource_t *resource, const coap_address_t *peer,
   return NULL;
 }
 
+
 coap_subscription_t *
-coap_add_observer(coap_resource_t *resource, 
+coap_find_observer(coap_resource_t *resource, const coap_address_t *peer) {
+  coap_subscription_t *s;
+  assert(resource);
+  assert(peer);
+  LL_FOREACH(resource->subscribers, s) {
+    if (coap_address_equals(&s->subscriber, peer))
+      return s;
+  }
+  return NULL;
+}
+
+coap_subscription_t *
+coap_add_observer_wrong(coap_resource_t *resource,
 		  const coap_address_t *observer,
 		  const str *token) {
   coap_subscription_t *s;
@@ -509,12 +526,53 @@ coap_add_observer(coap_resource_t *resource,
   return s;
 }
 
+
+coap_subscription_t *
+coap_add_observer(coap_resource_t *resource,
+		  const coap_address_t *observer, const str *token) {
+  coap_subscription_t *s, *found = NULL, *bfound = NULL;
+
+  assert(observer);
+
+  s = (coap_subscription_t *)coap_malloc(sizeof(coap_subscription_t));
+
+  if (!s)
+    return NULL;
+
+  coap_subscription_init(s);
+  memcpy(&s->subscriber, observer, sizeof(coap_address_t));
+
+  if (token && token->length) {
+    s->token_length = token->length;
+    memcpy(s->token, token->s, min(s->token_length, 8));
+  }
+
+  /* Check if there is already a subscription for this peer. */
+  LL_FOREACH(resource->subscribers, found) {
+    if (coap_address_equals(&found->subscriber, observer))
+      return s;
+    bfound = found;
+  }
+  /* replace */
+  if (found) {
+	  s->next = found->next;
+	  bfound->next = s;
+	  free(found);
+  }
+  /* add subscriber to resource */
+  else LL_PREPEND(resource->subscribers, s);
+
+  return s;
+}
+
+/*this is ok now with the new coap_find_observer */
 void
   coap_delete_observer(coap_resource_t *resource, coap_address_t *observer,
 		       const str *token) {
   coap_subscription_t *s;
 
-  s = coap_find_observer(resource, observer, token);
+  //s = coap_find_observer(resource, observer, token);
+  s = coap_find_observer(resource, observer);
 
   if (s) {
 #ifndef WITH_CONTIKI
@@ -608,12 +666,34 @@ coap_check_notify(coap_context_t *context) {
 
 void
 coap_handle_failed_notify(coap_context_t *context, 
+				coap_key_t reskey,
 			  const coap_address_t *peer, 
 			  const str *token) {
   coap_resource_t *r;
   coap_subscription_t *obs;
 
 #ifndef WITH_CONTIKI
+
+  //beh però ce n'è di codice eh?!
+
+  // find resource
+  r = coap_get_resource_from_key(context, reskey);
+
+  // find observer therein
+ obs = coap_find_observer(r, peer, token);
+
+  // increment fail count
+  obs->fail_cnt++;
+
+  // if failcount has topped, remove observer
+  if (obs->fail_cnt > COAP_OBS_MAX_FAIL) {
+	  LL_DELETE(r->subscribers, obs);
+	  coap_free(r);
+  }
+
+  //call on_unregister on the resource
+  r->on_unregister();
+
   ;
 #else /* WITH_CONTIKI */
   int i;

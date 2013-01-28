@@ -51,6 +51,8 @@ typedef struct coap_queue_t {
   coap_address_t remote;	/**< remote address */
   coap_tid_t id;		/**< unique transaction id */
 
+  coap_registration_t *reg; /**< pointer to the registration object */
+
   coap_pdu_t *pdu;		/**< the CoAP PDU to send */
 } coap_queue_t;
 
@@ -192,6 +194,20 @@ coap_tid_t coap_send_confirmed(coap_context_t *context,
 			       const coap_address_t *dst,
 			       coap_pdu_t *pdu);
 
+/**
+ * Notifies a change of resource @p uri to destination @p dst
+ * Lets the third-party streaming manager decide the data and
+ * the reliability and frequency policy of the notifications
+ * Automatically modifies the message and response characteristics to comply with
+ * draft-ietf-core-observe by looking at the corresponding entry
+ * in the server core resource and registration register:
+ * Messaging constraints: ratio CON/NON, back-off period, option value sequence number
+ * Response constraints: token, entity tags etc..
+ */
+coap_tid_t
+coap_notify(coap_context_t *context, str uri, coap_address_t dst,
+		const unsigned char data, unsigned int len, int conf, int rto, int rtc, unsigned char *max_age, int max_age_length);
+
 /** 
  * Creates a new ACK PDU with specified error @p code. The options
  * specified by the filter expression @p opts will be copied from the
@@ -250,7 +266,7 @@ coap_tid_t coap_send_error(coap_context_t *context,
 			   coap_opt_filter_t opts);
 
 /** 
- * Helper funktion to create and send a message with @p type (usually
+ * Helper function to create and send a message with @p type (usually
  * ACK or RST).  This function returns @c COAP_INVALID_TID when the
  * message was not sent, a valid transaction id otherwise.
  *

@@ -23,5 +23,6 @@
 #include "resource.h"
 #include "subscribe.h"
 #include "block.h"
+#include "asynchronous.h"
 
 #endif /* _COAP_H_ */

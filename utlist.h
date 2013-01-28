@@ -378,6 +378,26 @@ do {                                                                            
     }                                                                                          \
 } while(0) 
 
+#define LL_REPLACE_ELEM(head, el, add) \
+do { \
+LDECLTYPE(head) _tmp; \
+assert(head != NULL); \
+assert(el != NULL); \
+assert(add != NULL); \
+(add)->next = (el)->next; \
+if ((head) == (el)) { \
+(head) = (add); \
+} else { \
+_tmp = head; \
+while (_tmp->next && (_tmp->next != (el))) { \
+_tmp = _tmp->next; \
+} \
+if (_tmp->next) { \
+_tmp->next = (add); \
+} \
+} \
+} while (0)
+
 /******************************************************************************
  * doubly linked list macros (non-circular)                                   *
  *****************************************************************************/

@@ -42,6 +42,13 @@ typedef void (*coap_method_handler_t)
   (coap_context_t  *, struct coap_resource_t *, coap_address_t *, coap_pdu_t *,
    str * /* token */, coap_pdu_t * /* response */);
 
+typedef int (*coap_registration_handler_t)
+	(coap_context_t  *, struct coap_resource_t *, coap_address_t *, coap_pdu_t *,
+	str * /* token */);
+
+typedef int (*coap_notification_handler_t)
+	(...);
+
 #define COAP_ATTR_FLAGS_RELEASE_NAME  0x1
 #define COAP_ATTR_FLAGS_RELEASE_VALUE 0x2
 
@@ -78,6 +85,23 @@ typedef struct coap_resource_t {
   LIST_STRUCT(subscribers); /**< list of observers for this resource */
 #endif /* WITH_CONTIKI */
 
+  /**
+   * Used to store resource-specific actions to be performed
+   * when a resource gets registered or unregistered.
+   * Rationale behind is that while any resource-specific work on registrations can
+   * be embedded in the GET handler, resource-specific work for unregistration can
+   * be requested also outside the context of a get request, e.g. when the observation timeout
+   * expires
+   *
+   * When the observe option is recognized in an incoming Request
+   * when the maximum retransmission without ACKs is reached,
+   * when the observation timeout expires,
+   * or when a confirmable notification gets RST,
+   * the appropriate one of those will be called.
+   *
+   * they return -1 if something went wrong
+   */
+  coap_registration_handler_t on_unregister;
 
   /**
    * Request URI for this resource. This field will point into the
@@ -231,6 +255,7 @@ void coap_hash_request_uri(const coap_pdu_t *request, coap_key_t key);
  * @param resource The observed resource.
  * @param observer The remote peer that wants to received status updates.
  * @param token The token that identifies this subscription.
+ * FIXME: this fourth parameter does not exist!
  * @param token_length The actual length of @p token. Must be @c 0 when
  *        @p token is @c NULL.
  * @return A pointer to the added/updated subscription information or 
