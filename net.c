@@ -655,7 +655,8 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
       token.s = COAP_OPT_VALUE(opt_iter.option);
     }
 
-    coap_handle_failed_notify(context, &node->remote, &token);
+    if (node->reg != NULL)
+    	coap_handle_failed_notify(context, node->reg, &node->remote, &token);
   }
 #endif /* WITHOUT_OBSERVE */
 
@@ -1219,6 +1220,8 @@ coap_dispatch( coap_context_t *context ) {
 		   * and not a notification, the reg pointer will be NULL; check that,
 		   * then we can safely zero-out the registration's fail count
 		   * and release the pointer to the registration that was contained in sent.
+		   * This pointer was checked-out when the queue entry
+		   * had been created.
 		   */
     	  sent->reg->fail_cnt = 0;
     	  coap_registration_release(sent->reg);
@@ -1247,73 +1250,23 @@ coap_dispatch( coap_context_t *context ) {
 
       /* @todo remove observer for this resource, if any 
        * get token from sent and try to find a matching resource. Uh!
-       * nono only resource+destinationnnnnnnnnn here as well, there's only one.
+       * no, no, only resource+destination here as well, there's only one.
        */
 
-
-      /*
-      //extact mid from received message
-      mid = rcvd->pdu->hdr->id;
-
-      //find in the send queue an entry with such message id
-      temp = context->sendqueue;
-      btemp = context->sendqueue;
-      while (temp != NULL) {
-    	  if (temp->mid == mid) break;
-    	  btemp = temp;
-    	  temp = temp->next;
-      }
-      if (temp != NULL) { //if found
-		  //fetch resource
-		  res = coap_get_resource_from_key(context,
-					temp->reskey);
-
-		  //delete observer if it exists within the resource
-		  coap_delete_observer(res,
-					  temp->remote,
-					  NULL);
-      }
-       */
-
-
-      /* from CoAP's draft it's clear that the token might not appear in an RST!:
-       *	The Token Option is used to match a response with a request. Every
-request has a client-generated token which the server MUST echo in
-any response. The token value is a sequence of 0 to 8 bytes. A
-default value of the zero-length token is assumed in the absence of
-the option. A value of 1 to 8 bytes can be sent as an option value.
-Thus when the token value is empty, the Token Option MUST be elided.
-A token is intended for use as a client-local identifier for
-differentiating between concurrent requests (see Section 5.3). A
-client SHOULD generate tokens in a way that tokens currently in use
-for a given source/destination pair are unique. An empty token value
-is appropriate e.g. when no other tokens are in use to a destination,
-or when requests are made serially per destination. There are
-however multiple possible implementation strategies to fulfill this.
-An endpoint receiving a token MUST treat it as opaque and make no
-assumptions about its format.
-       */
-      /* and the resource will not appear in the rst either. in fact, they can even be
-       * piggybacked
-       * how to know the resource?
-       *
-       *
-       */
-
-
-      /* find transaction in sendqueue to stop retransmission */
+      /* Find transaction in sendqueue to stop retransmission */
       coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
 
       if (sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
     	  /* A transaction for this message ID has been found;
     	   * It's a RST and therefore we should not only delete this
-    	   * transaction, but also trigger a stop of the stream.
-    	   * There may be some resource-specific work to do and therefore
-    	   * we first identify the resource using sent->reg
+    	   * transaction, but also trigger a stop of the stream. This work
+    	   * is performed by the on_unregister function associated
+    	   * with the resource and therefore we must first
+    	   * identify the resource using sent->reg.
     	   */
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
     	  if (res != NULL && res->on_unregister != NULL)
-    		  res->on_unregister();
+    		  res->on_unregister(sent->reg);
     	  coap_registration_release(sent->reg);
       }
 

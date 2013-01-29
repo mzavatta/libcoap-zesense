@@ -11,7 +11,7 @@ coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token) {
 	memset(s, 0, sizeof(coap_registration_t));
 
 	s->next = NULL;
-	s->refcnt = 1;
+	s->refcnt = 0;
 	s->reskey = reskey;
 	memcpy(&s->subscriber, &sub, sizeof(coap_address_t));
 
@@ -25,15 +25,29 @@ coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token) {
 }
 
 void
-coap_registration_release(coap_registration_t *r) {
+coap_registration_release(coap_context_t *context, coap_registration_t *r) {
+	/*
+	 * FIXME
+	 * We make it aware that the object is within a list
+	 * so when the refcnt is 0, before freeing, we strip it
+	 * from the list and reconnect the siblings
+	 */
+	coap_resource_t *res;
+	coap_registration_t *p;
+
 	assert(r);
 	r->refcnt--;
 	if (r->refcnt == 0) {
-		/* FIXME
-		 * since it's stored into a linked list we cannot
-		 * just free it blindly, we need to connect the
-		 * siblings first
+		/* Unfortunately as it is a single-linked list
+		 * for the deletion we must restart from the head
+		 * deletion O(n)..
 		 */
+		res = coap_get_resource_from_key(context, r->reskey);
+		if (res != NULL) {
+			p = res->subscribers;
+			while (p != NULL && p->next != r) p = p->next;
+			if (p != NULL) p->next = r->next;
+		}
 		free(r);
 	}
 }
@@ -50,43 +64,35 @@ coap_registration_t *
 coap_add_registration(coap_resource_t *resource,
 		coap_address_t *peer, str *token) {
 
-	coap_registration_t *s = NULL, *found = NULL; //*bfound = NULL;
+	coap_registration_t *s = NULL, *found = NULL;
 	assert(peer);
 
-	s = coap_registration_init(resource->key, *peer, token);
-
-	/* Check if there is already a subscription for this peer. */
-	/*
-	LL_FOREACH(resource->subscribers, found) {
-		if (coap_address_equals(&found->subscriber, peer))
-			break;
-		bfound = found;
-	}*/
-	/* replace *//*
-	if (found) {
-		s->next = found->next;
-		bfound->next = s;
-		coap_registration_release(found);
-	}*/
-
 	found = coap_find_registration(resource, peer);
-	/* replace
-	 * !! we must not move it because the value of this pointer
-	 * identifies the observer at the streaming manager
-	 * level. if we don't delete the stream first, we must
-	 * keep the same reference !!
+	/* Replace, remember that we must not move it because
+	 * the value of this pointer identifies the observer at
+	 * the streaming manager level.
 	 */
 	if (found) {
 		found->token_length = token->length;
-		memcpy(found->token, 0, 8);
+		memset(found->token, 0, 8);
 		memcpy(found->token, token->s, min(s->token_length, 8));
 		//no need to copy subscriber, it's the same one
+		/*
+		 * No new "ticket" is generated, already another one
+		 * had been generated before
+		 */
+		//s = coap_registration_checkout(found);
 		s = found;
-		s = coap_registration_checkout(s);
 	}
-	/* add */
+	/* Add, prepending. */
 	else {
-		LL_PREPEND(resource->subscribers, s);
+		s = coap_registration_init(resource->key, *peer, token);
+		s->next = resource->subscribers;
+		/* Generate a new ticket,
+		 * a new observation has been created
+		 */
+		//resource->subscribers = coap_registration_checkout(s);
+		resource->subscribers = s;
 	}
 	return s;
 }
@@ -106,4 +112,20 @@ coap_delete_registration(coap_resource_t *resource,
     /* FIXME: notify observer that its subscription has been removed */
     coap_registration_release(s);
 	}
+}
+
+coap_registration_t *
+coap_find_registration(coap_resource_t *resource,
+		coap_address_t *peer) {
+
+	coap_registration_t *s = NULL;
+
+	s = resource->subscribers;
+	while (s != NULL) {
+		if (coap_address_equals(&(s->subscriber), peer) == 1)
+			break;
+		s = s->next;
+	}
+
+	return s;
 }

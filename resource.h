@@ -46,8 +46,8 @@ typedef int (*coap_registration_handler_t)
 	(coap_context_t  *, struct coap_resource_t *, coap_address_t *, coap_pdu_t *,
 	str * /* token */);
 
-typedef int (*coap_notification_handler_t)
-	(...);
+//typedef int (*coap_notification_handler_t)
+//(...);
 
 #define COAP_ATTR_FLAGS_RELEASE_NAME  0x1
 #define COAP_ATTR_FLAGS_RELEASE_VALUE 0x2
@@ -79,11 +79,13 @@ typedef struct coap_resource_t {
 #ifndef WITH_CONTIKI
   UT_hash_handle hh;
   coap_attr_t *link_attr; /**< attributes to be included with the link format */
-  coap_subscription_t *subscribers; /**< list of observers for this resource */
+  //coap_subscription_t *subscribers; /**< list of observers for this resource */
 #else /* WITH_CONTIKI */
   LIST_STRUCT(link_attr); /**< attributes to be included with the link format */
   LIST_STRUCT(subscribers); /**< list of observers for this resource */
 #endif /* WITH_CONTIKI */
+
+  coap_registration_t *subscribers;
 
   /**
    * Used to store resource-specific actions to be performed
@@ -231,6 +233,7 @@ coap_register_handler(coap_resource_t *resource,
  */
 coap_resource_t *coap_get_resource_from_key(coap_context_t *context, 
 					    coap_key_t key);
+
 
 /** 
  * Calculates the hash key for the resource requested by the

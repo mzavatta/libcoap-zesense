@@ -666,33 +666,35 @@ coap_check_notify(coap_context_t *context) {
 
 void
 coap_handle_failed_notify(coap_context_t *context, 
-				coap_key_t reskey,
+			  coap_registration_t *reg,
 			  const coap_address_t *peer, 
 			  const str *token) {
   coap_resource_t *r;
-  coap_subscription_t *obs;
 
 #ifndef WITH_CONTIKI
 
-  //beh però ce n'è di codice eh?!
+  if (reg != NULL) {
 
-  // find resource
-  r = coap_get_resource_from_key(context, reskey);
+	  /* Increment fail count. */
+	  reg->fail_cnt++;
 
-  // find observer therein
- obs = coap_find_observer(r, peer, token);
+	  /* If failcount has topped, unregister the observer. */
+	  if (reg->fail_cnt > COAP_OBS_MAX_FAIL) {
+		  /* Find resource. */
+		  r = coap_get_resource_from_key(context, reg->reskey);
 
-  // increment fail count
-  obs->fail_cnt++;
+		  /* Unregister */
+		  r->on_unregister(context, reg);
+	  }
 
-  // if failcount has topped, remove observer
-  if (obs->fail_cnt > COAP_OBS_MAX_FAIL) {
-	  LL_DELETE(r->subscribers, obs);
-	  coap_free(r);
+	  /* Release registration, we don't hold it anymore.
+	   * If the ticket cancellation confirmation has been
+	   * received from the streaming manager and if
+	   * this is the last transaction holding */
+	  coap_registration_release(reg);
+
+	  return;
   }
-
-  //call on_unregister on the resource
-  r->on_unregister();
 
   ;
 #else /* WITH_CONTIKI */
