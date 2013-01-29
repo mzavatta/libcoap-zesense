@@ -42,12 +42,8 @@ typedef void (*coap_method_handler_t)
   (coap_context_t  *, struct coap_resource_t *, coap_address_t *, coap_pdu_t *,
    str * /* token */, coap_pdu_t * /* response */);
 
-typedef int (*coap_registration_handler_t)
-	(coap_context_t  *, struct coap_resource_t *, coap_address_t *, coap_pdu_t *,
-	str * /* token */);
-
-//typedef int (*coap_notification_handler_t)
-//(...);
+typedef void (*coap_registration_handler_t)
+	(coap_context_t *, coap_registration_t * /* registration */);
 
 #define COAP_ATTR_FLAGS_RELEASE_NAME  0x1
 #define COAP_ATTR_FLAGS_RELEASE_VALUE 0x2

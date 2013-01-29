@@ -566,13 +566,19 @@ coap_send_confirmed(coap_context_t *context,
   return node->id;
 }
 
-/* Implementation follows coap_send_confirmed()
+/* Implementation mimics coap_send_confirmed()
  * except for the assignment of coap_queue_t's reg field. */
 coap_tid_t
 coap_notify(coap_context_t *context,
 	    const coap_address_t *dst,
 	    coap_pdu_t *pdu,
 	    coap_registration_t *reg) {
+		/* TODO: add deadline
+		 * it can be set perfectly by imposing
+		 * a random factor of 1.00 (the standard allows this)
+		 * therefore the bound cases of ACK_TIMEOUT*1
+		 * and ACK_TIMEOUT*ACK_RANDOM factor collide.
+		 */
   coap_queue_t *node;
   coap_tick_t now;
   int r;

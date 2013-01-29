@@ -1,7 +1,17 @@
+/*
+ * libcoap (ZeSense extension)
+ * -- New types and utilities to support
+ *    draft-ietf-core-observe
+ *
+ * Marco Zavatta
+ * <marco.zavatta@telecom-bretagne.eu>
+ * <marco.zavatta@mail.polimi.it>
+ */
+
 #include "config.h"
 #include "address.h"
 
-typedef coap_registration_t* coap_ticket_t;
+struct coap_registration_t;
 
 typedef struct coap_registration_t {
 	struct coap_registration_t *next; /**< next element in linked list */
@@ -40,6 +50,8 @@ typedef struct coap_registration_t {
   	//unsigned char seq_num[2];
 
 } coap_registration_t;
+
+typedef coap_registration_t* coap_ticket_t;
 
 coap_registration_t *
 coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token);
