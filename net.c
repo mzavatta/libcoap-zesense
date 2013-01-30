@@ -569,7 +569,7 @@ coap_send_confirmed(coap_context_t *context,
 /* Implementation mimics coap_send_confirmed()
  * except for the assignment of coap_queue_t's reg field. */
 coap_tid_t
-coap_notify(coap_context_t *context,
+coap_notify_confirmed(coap_context_t *context,
 	    const coap_address_t *dst,
 	    coap_pdu_t *pdu,
 	    coap_registration_t *reg) {
@@ -610,8 +610,10 @@ coap_notify(coap_context_t *context,
   memcpy(&node->remote, dst, sizeof(coap_address_t));
   node->pdu = pdu;
 
-  /* That's the real difference. Note reg's reference count increasing. */
-  node->reg = coap_registration_checkout(reg);
+  /* As a conceptual separation, we let the checkout be done when passing
+   * reg as a parameter by the caller:
+   * coap_notify_confirmed( , , , coap_registration_checkout(reg) ) */
+  node->reg = reg;
 
   /* Insert the node into the sendqueue. */
   assert(&context->sendqueue);
@@ -1227,7 +1229,8 @@ coap_dispatch( coap_context_t *context ) {
 		   * then we can safely zero-out the registration's fail count
 		   * and release the pointer to the registration that was contained in sent.
 		   * This pointer was checked-out when the queue entry
-		   * had been created.
+		   * had been created (specifically coap_send_confirmed()
+		   * and coap_notify() functions).
 		   */
     	  sent->reg->fail_cnt = 0;
     	  coap_registration_release(sent->reg);
@@ -1273,6 +1276,9 @@ coap_dispatch( coap_context_t *context ) {
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
     	  if (res != NULL && res->on_unregister != NULL)
     		  res->on_unregister(sent->reg);
+    	  /* Release because the pointer that was in the sendqueue's
+    	   * transaction is now gone!
+    	   */
     	  coap_registration_release(sent->reg);
       }
 

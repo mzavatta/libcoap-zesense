@@ -51,7 +51,6 @@ typedef struct coap_registration_t {
 
 } coap_registration_t;
 
-typedef coap_registration_t* coap_ticket_t;
 
 coap_registration_t *
 coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token);

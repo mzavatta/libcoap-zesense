@@ -77,10 +77,7 @@ coap_add_registration(coap_resource_t *resource,
 		memset(found->token, 0, 8);
 		memcpy(found->token, token->s, min(s->token_length, 8));
 		//no need to copy subscriber, it's the same one
-		/*
-		 * No new "ticket" is generated, already another one
-		 * had been generated before
-		 */
+
 		//s = coap_registration_checkout(found);
 		s = found;
 	}
@@ -89,7 +86,10 @@ coap_add_registration(coap_resource_t *resource,
 		s = coap_registration_init(resource->key, *peer, token);
 		s->next = resource->subscribers;
 		/* Generate a new ticket,
-		 * a new observation has been created
+		 * a new observation has been created.
+		 * Nope, we've decided to do it outside, the ticket gets
+		 * generated when it is actually passed to the Streaming
+		 * Manager
 		 */
 		//resource->subscribers = coap_registration_checkout(s);
 		resource->subscribers = s;

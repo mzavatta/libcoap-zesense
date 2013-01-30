@@ -88,6 +88,7 @@ coap_async_state_t *
 coap_register_async(coap_context_t *context, coap_address_t *peer,
 		    coap_pdu_t *request, unsigned char flags, void *data);
 
+
 /** 
  * Removes the state object identified by @p id from @p context. The
  * removed object is returned in @p s, if found. Otherwise, @p s is
