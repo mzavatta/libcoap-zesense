@@ -249,6 +249,12 @@ coap_new_context(const coap_address_t *listen_addr) {
   coap_register_option(c, COAP_OPTION_TOKEN);
   coap_register_option(c, COAP_OPTION_URI_QUERY);
 
+  /* Added.. make sure that pointers to the buffers are NULL
+   * at startup.
+   */
+  c->notbuf = NULL;
+  c->smreqbuf = NULL;
+
 #ifndef WITH_CONTIKI
   c->sockfd = socket(listen_addr->addr.sa.sa_family, SOCK_DGRAM, 0);
   if ( c->sockfd < 0 ) {

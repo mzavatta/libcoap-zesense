@@ -123,6 +123,16 @@ typedef struct coap_context_t {
   unsigned short observe;
 
   coap_response_handler_t response_handler;
+
+
+  /* Added pointers to support the Streaming
+   * Manager communication, pointers to two
+   * buffers
+   */
+  ze_coap_request_buf_t *notbuf;
+  ze_sm_request_buf_t *smreqbuf;
+
+
 } coap_context_t;
 
 /**
