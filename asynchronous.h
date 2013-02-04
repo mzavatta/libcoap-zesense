@@ -8,13 +8,17 @@
  * <marco.zavatta@mail.polimi.it>
  */
 
+#ifndef ZE_ASYNCHRNONOUS_H
+#define ZE_ASYNCHRNONOUS_H
+
 #include "config.h"
 #include "address.h"
+#include "resource.h"
 
 struct coap_registration_t;
 
 typedef struct coap_registration_t {
-	struct coap_registration_t *next; /**< next element in linked list */
+	coap_registration_t *next; /**< next element in linked list */
   	coap_address_t subscriber;	    /**< address and port of subscriber */
 
   	unsigned int non:1;		/**< send non-confirmable notifies if @c 1  */
@@ -68,3 +72,5 @@ coap_add_registration(coap_resource_t *resource,
 void
 coap_delete_registration(coap_resource_t *resource,
 		coap_address_t *peer, str *token);
+
+#endif

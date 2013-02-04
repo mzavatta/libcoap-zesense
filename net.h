@@ -38,6 +38,11 @@
 #include "pdu.h"
 #include "coap_time.h"
 
+#include "asynchronous.h"
+
+#include "ze_coap_reqbuf.h"
+#include "ze_sm_reqbuf.h"
+
 struct coap_queue_t;
 
 typedef struct coap_queue_t {
