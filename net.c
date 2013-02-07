@@ -34,6 +34,7 @@
 #include "option.h"
 #include "encode.h"
 #include "net.h"
+#include "asynchronous.h"
 
 #ifndef WITH_CONTIKI
 
@@ -84,8 +85,9 @@ coap_free_node(coap_queue_t *node) {
 
 int print_wellknown(coap_context_t *, unsigned char *, size_t *, coap_opt_t *);
 
-void coap_handle_failed_notify(coap_context_t *, const coap_address_t *, 
-			       const str *);
+void
+coap_handle_failed_notify(coap_context_t *context,  coap_registration_t *reg,
+			  const coap_address_t *peer, const str *token);
 
 int
 coap_insert_node(coap_queue_t **queue, coap_queue_t *node,
@@ -1239,7 +1241,9 @@ coap_dispatch( coap_context_t *context ) {
 		   * and coap_notify() functions).
 		   */
     	  sent->reg->fail_cnt = 0;
-    	  coap_registration_release(sent->reg);
+    	  res = coap_get_resource_from_key(context, sent->reg->reskey);
+    	  if (res != NULL)
+    		  coap_registration_release(res, sent->reg);
       }
 
       if (rcvd->pdu->hdr->code == 0)
@@ -1280,12 +1284,14 @@ coap_dispatch( coap_context_t *context ) {
     	   * identify the resource using sent->reg.
     	   */
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
-    	  if (res != NULL && res->on_unregister != NULL)
-    		  res->on_unregister(sent->reg);
-    	  /* Release because the pointer that was in the sendqueue's
-    	   * transaction is now gone!
-    	   */
-    	  coap_registration_release(sent->reg);
+    	  if (res != NULL &&
+    			  (coap_registration_handler_t*)res->on_unregister != NULL) {
+    		  res->on_unregister(context, sent->reg);
+			  /* Release because the pointer that was in the sendqueue's
+			   * transaction is now gone!
+			   */
+			  coap_registration_release(res, sent->reg);
+    	  }
       }
 
       break;

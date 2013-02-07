@@ -11,6 +11,9 @@
 
 #include "config.h"
 
+#include <android/log.h>
+#include "ze_log.h"
+
 #ifndef COAP_DEBUG_FD
 #define COAP_DEBUG_FD stdout
 #endif
@@ -45,9 +48,15 @@ void coap_log_impl(coap_log_t level, const char *format, ...);
 #ifndef NDEBUG
 
 /* A set of convenience macros for common log levels. */
+/*
 #define info(...) coap_log(LOG_INFO, __VA_ARGS__)
 #define warn(...) coap_log(LOG_WARN, __VA_ARGS__)
 #define debug(...) coap_log(LOG_DEBUG, __VA_ARGS__)
+*/
+
+#define info(...) LOGI(__VA_ARGS__)
+#define warn(...) LOGW(__VA_ARGS__)
+#define debug(...) LOGI(__VA_ARGS__)
 
 #include "pdu.h"
 void coap_show_pdu(const coap_pdu_t *);

@@ -38,12 +38,14 @@
 #include "pdu.h"
 #include "coap_time.h"
 
-#include "asynchronous.h"
+//#include "asynchronous.h"
 
 #include "ze_coap_reqbuf.h"
 #include "ze_sm_reqbuf.h"
 
+
 struct coap_queue_t;
+struct coap_registration_t;
 
 typedef struct coap_queue_t {
   struct coap_queue_t *next;
@@ -76,6 +78,7 @@ coap_queue_t *coap_new_node();
 
 struct coap_resource_t;
 struct coap_context_t;
+
 #ifndef WITHOUT_ASYNC
 struct coap_async_state_t;
 #endif
@@ -219,9 +222,17 @@ coap_tid_t coap_send_confirmed(coap_context_t *context,
  * Messaging constraints: ratio CON/NON, back-off period, option value sequence number
  * Response constraints: token, entity tags etc..
  */
-coap_tid_t
+/*coap_tid_t
 coap_notify(coap_context_t *context, str uri, coap_address_t dst,
 		const unsigned char data, unsigned int len, int conf, int rto, int rtc, unsigned char *max_age, int max_age_length);
+*/
+
+coap_tid_t
+coap_notify_confirmed(coap_context_t *context,
+	    const coap_address_t *dst,
+	    coap_pdu_t *pdu,
+	    coap_registration_t *reg);
+
 
 /** 
  * Creates a new ACK PDU with specified error @p code. The options

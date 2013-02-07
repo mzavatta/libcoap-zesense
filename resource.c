@@ -447,8 +447,10 @@ coap_print_link(const coap_resource_t *resource,
 }
 
 #ifndef WITHOUT_OBSERVE
+
+
 coap_subscription_t *
-coap_find_observer_wrong(coap_resource_t *resource, const coap_address_t *peer,
+coap_find_observer(coap_resource_t *resource, const coap_address_t *peer,
 		     const str *token) {
   coap_subscription_t *s;
 
@@ -470,6 +472,7 @@ coap_find_observer_wrong(coap_resource_t *resource, const coap_address_t *peer,
 }
 
 
+  /*
 coap_subscription_t *
 coap_find_observer(coap_resource_t *resource, const coap_address_t *peer) {
   coap_subscription_t *s;
@@ -481,9 +484,10 @@ coap_find_observer(coap_resource_t *resource, const coap_address_t *peer) {
   }
   return NULL;
 }
+*/
 
 coap_subscription_t *
-coap_add_observer_wrong(coap_resource_t *resource,
+coap_add_observer(coap_resource_t *resource,
 		  const coap_address_t *observer,
 		  const str *token) {
   coap_subscription_t *s;
@@ -526,7 +530,7 @@ coap_add_observer_wrong(coap_resource_t *resource,
   return s;
 }
 
-
+/*
 coap_subscription_t *
 coap_add_observer(coap_resource_t *resource,
 		  const coap_address_t *observer, const str *token) {
@@ -547,32 +551,32 @@ coap_add_observer(coap_resource_t *resource,
     memcpy(s->token, token->s, min(s->token_length, 8));
   }
 
-  /* Check if there is already a subscription for this peer. */
+  // Check if there is already a subscription for this peer
   LL_FOREACH(resource->subscribers, found) {
     if (coap_address_equals(&found->subscriber, observer))
       return s;
     bfound = found;
   }
-  /* replace */
+  // replace
   if (found) {
 	  s->next = found->next;
 	  bfound->next = s;
 	  free(found);
   }
-  /* add subscriber to resource */
+  // add subscriber to resource
   else LL_PREPEND(resource->subscribers, s);
 
   return s;
 }
+*/
 
-/*this is ok now with the new coap_find_observer */
 void
   coap_delete_observer(coap_resource_t *resource, coap_address_t *observer,
 		       const str *token) {
   coap_subscription_t *s;
 
-  //s = coap_find_observer(resource, observer, token);
-  s = coap_find_observer(resource, observer);
+  s = coap_find_observer(resource, observer, token);
+  //s = coap_find_observer(resource, observer);
 
   if (s) {
 #ifndef WITH_CONTIKI
@@ -678,10 +682,11 @@ coap_handle_failed_notify(coap_context_t *context,
 	  /* Increment fail count. */
 	  reg->fail_cnt++;
 
+	  /* Find resource. */
+	  r = coap_get_resource_from_key(context, reg->reskey);
+
 	  /* If failcount has topped, unregister the observer. */
 	  if (reg->fail_cnt > COAP_OBS_MAX_FAIL) {
-		  /* Find resource. */
-		  r = coap_get_resource_from_key(context, reg->reskey);
 
 		  /* Unregister */
 		  r->on_unregister(context, reg);
@@ -691,7 +696,7 @@ coap_handle_failed_notify(coap_context_t *context,
 	   * If the ticket cancellation confirmation has been
 	   * received from the streaming manager and if
 	   * this is the last transaction holding */
-	  coap_registration_release(reg);
+	  coap_registration_release(r, reg);
 
 	  return;
   }
@@ -737,6 +742,113 @@ coap_handle_failed_notify(coap_context_t *context,
     }
   }
 #endif /* WITH_CONTIKI */
+}
+
+void
+coap_registration_release(coap_resource_t *res,
+		/*coap_context_t *context,*/ coap_registration_t *r) {
+	/*
+	 * FIXME
+	 * We make it aware that the object is within a list
+	 * so when the refcnt is 0, before freeing, we strip it
+	 * from the list and reconnect the siblings
+	 */
+	//coap_resource_t *res;
+	coap_registration_t *p;
+
+	assert(r);
+	r->refcnt--;
+	if (r->refcnt == 0) {
+		/* Unfortunately as it is a single-linked list
+		 * for the deletion we must restart from the head
+		 * deletion O(n)..
+		 */
+		//res = coap_get_resource_from_key(context, r->reskey);
+		if (res != NULL) {
+			p = res->subscribers;
+			while (p != NULL && p->next != r) p = p->next;
+			if (p != NULL) p->next = r->next;
+		}
+		free(r);
+	}
+}
+
+coap_registration_t *
+coap_registration_checkout(coap_registration_t *r) {
+	assert(r);
+	r->refcnt++;
+	return r;
+}
+
+
+coap_registration_t *
+coap_add_registration(coap_resource_t *resource,
+		coap_address_t *peer, str *token) {
+
+	coap_registration_t *s = NULL, *found = NULL;
+	assert(peer);
+
+	found = coap_find_registration(resource, peer);
+	/* Replace, remember that we must not move it because
+	 * the value of this pointer identifies the observer at
+	 * the streaming manager level.
+	 */
+	if (found) {
+		found->token_length = token->length;
+		memset(found->token, 0, 8);
+		memcpy(found->token, token->s, min(s->token_length, 8));
+		//no need to copy subscriber, it's the same one
+
+		//s = coap_registration_checkout(found);
+		s = found;
+	}
+	/* Add, prepending. */
+	else {
+		s = coap_registration_init(resource->key, *peer, token);
+		s->next = resource->subscribers;
+		/* Generate a new ticket,
+		 * a new observation has been created.
+		 * Nope, we've decided to do it outside, the ticket gets
+		 * generated when it is actually passed to the Streaming
+		 * Manager
+		 */
+		//resource->subscribers = coap_registration_checkout(s);
+		resource->subscribers = s;
+	}
+	return s;
+}
+
+
+void
+coap_delete_registration(coap_resource_t *resource,
+		coap_address_t *peer, str *token) {
+
+	coap_registration_t *s;
+
+	//s = coap_find_observer(resource, observer, token);
+	s = coap_find_registration(resource, peer);
+
+	if (s) {
+		LL_DELETE(resource->subscribers, s);
+		/* FIXME: notify observer that its subscription has been removed */
+		coap_registration_release(resource, s);
+	}
+}
+
+coap_registration_t *
+coap_find_registration(coap_resource_t *resource,
+		coap_address_t *peer) {
+
+	coap_registration_t *s = NULL;
+
+	s = resource->subscribers;
+	while (s != NULL) {
+		if (coap_address_equals(&(s->subscriber), peer) == 1)
+			break;
+		s = s->next;
+	}
+
+	return s;
 }
 
 #endif /* WITHOUT_NOTIFY */

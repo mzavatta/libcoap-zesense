@@ -13,12 +13,12 @@
 
 #include "config.h"
 #include "address.h"
-#include "resource.h"
-
-struct coap_registration_t;
+#include "hashkey.h"
+#include "pdu.h"
+#include "str.h"
 
 typedef struct coap_registration_t {
-	coap_registration_t *next; /**< next element in linked list */
+	struct coap_registration_t *next; /**< next element in linked list */
   	coap_address_t subscriber;	    /**< address and port of subscriber */
 
   	unsigned int non:1;		/**< send non-confirmable notifies if @c 1  */
@@ -55,22 +55,16 @@ typedef struct coap_registration_t {
 
 } coap_registration_t;
 
+typedef union coap_ticket_u coap_ticket_t;
+union coap_ticket_u {
+	/* Ticket corresponding to the underlying registration.*/
+	coap_registration_t *reg;
+
+	/* Ticket corresponding to the underlying asynchronous request. */
+	coap_tid_t tid;
+};
 
 coap_registration_t *
 coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token);
-
-void
-coap_registration_release(coap_registration_t* r);
-
-coap_registration_t *
-coap_registration_checkout(coap_registration_t *r);
-
-coap_registration_t *
-coap_add_registration(coap_resource_t *resource,
-		coap_address_t *peer, str *token);
-
-void
-coap_delete_registration(coap_resource_t *resource,
-		coap_address_t *peer, str *token);
 
 #endif

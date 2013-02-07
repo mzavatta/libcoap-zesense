@@ -14,17 +14,17 @@ SHELL = /bin/sh
 MKDIR = mkdir
 ETAGS = /bin/false
 
-abs_builddir = /home/telecombretagne/libcoap/libcoap-3.0.0
+abs_builddir = /home/telecombretagne/libcoap-3.0.0-android
 top_builddir = .
 package = libcoap-3.0.0
 
 # files and flags
 SOURCES:= pdu.c net.c debug.c encode.c uri.c coap_list.c resource.c hashkey.c \
-	 str.c option.c async.c subscribe.c block.c
+	 str.c option.c async.c subscribe.c block.c asynchronous.c
 OBJECTS:= $(patsubst %.c, %.o, $(SOURCES))
 HEADERS:=coap.h config.h debug.h pdu.h net.h encode.h uri.h coap_list.h mem.h \
 	str.h option.h bits.h uthash.h utlist.h resource.h hashkey.h async.h \
-	subscribe.h block.h address.h prng.h coap_time.h
+	subscribe.h block.h address.h prng.h coap_time.h asynchronous.h
 CFLAGS:=-Wall -Wextra -std=c99 -pedantic -g -O2
 CPPFLAGS:=
 DISTDIR=$(top_builddir)/$(package)

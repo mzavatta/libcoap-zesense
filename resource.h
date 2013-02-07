@@ -298,4 +298,23 @@ void coap_check_notify(coap_context_t *context);
 
 /** @} */
 
+void
+coap_registration_release(coap_resource_t *res,
+		/*coap_context_t *context,*/ coap_registration_t *r);
+
+coap_registration_t *
+coap_registration_checkout(coap_registration_t *r);
+
+coap_registration_t *
+coap_add_registration(coap_resource_t *resource,
+		coap_address_t *peer, str *token);
+
+void
+coap_delete_registration(coap_resource_t *resource,
+		coap_address_t *peer, str *token);
+
+coap_registration_t *
+coap_find_registration(coap_resource_t *resource,
+		coap_address_t *peer);
+
 #endif /* _COAP_RESOURCE_H_ */
