@@ -21,9 +21,9 @@ typedef struct coap_registration_t {
 	struct coap_registration_t *next; /**< next element in linked list */
   	coap_address_t subscriber;	    /**< address and port of subscriber */
 
-  	unsigned int non:1;		/**< send non-confirmable notifies if @c 1  */
-  	unsigned int non_cnt:4;	/**< up to 15 non-confirmable notifies allowed */
-  	unsigned int fail_cnt:2;	/**< up to 3 confirmable notifies can fail */
+  	unsigned int non;		/**< send non-confirmable notifies if @c 1  */
+  	unsigned int non_cnt;	/**< up to 15 non-confirmable notifies allowed */
+  	unsigned int fail_cnt;	    /**< up to 3 confirmable notifies can fail */
 
   	size_t token_length;		/**< actual length of token */
   	unsigned char token[8];	/**< token used for subscription */
@@ -34,12 +34,12 @@ typedef struct coap_registration_t {
   	/* Reference count */
   	int refcnt;
 
-  	/* Delete flag, to be set when the client requests
-  	 * a delete of the observer relationship
-  	 * (or a deletion of the resource)
-  	 * but there are other references around.
+  	/* Invalid flag, to be set when the registration
+  	 * is in the process to be deleted. The deletion
+  	 * trigger can either be an explicit client request TODO
+  	 * or a topped fail count.
   	 */
-  	int delflag;
+  	int invalid;
 
   	/* @todo CON/NON flag, block size */
 

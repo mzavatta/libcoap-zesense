@@ -677,19 +677,32 @@ coap_handle_failed_notify(coap_context_t *context,
 
 #ifndef WITH_CONTIKI
 
+  LOGI("Handling failed notify");
+
   if (reg != NULL) {
 
-	  /* Increment fail count. */
-	  reg->fail_cnt++;
+	  /* If fail count already > COAP_OBS_MAX_FAIL,
+	   * somebody else has taken care of unregistering the
+	   * whole thing, so we just say bye bye.
+	   * Remember to release though!
+	   */
+	  /* TODO: could convert it to a "freezed"
+	   * or "valid" flag. */
+	  if (reg->fail_cnt <= COAP_OBS_MAX_FAIL) {
+		  /* Increment fail count. */
+		  reg->fail_cnt++;
 
-	  /* Find resource. */
-	  r = coap_get_resource_from_key(context, reg->reskey);
+		  /* Find resource. */
+		  r = coap_get_resource_from_key(context, reg->reskey);
 
-	  /* If failcount has topped, unregister the observer. */
-	  if (reg->fail_cnt > COAP_OBS_MAX_FAIL) {
+		  LOGI("Checking failcount, now %d", reg->fail_cnt);
+		  /* If failcount has topped, unregister the observer. */
+		  if (reg->fail_cnt > COAP_OBS_MAX_FAIL) {
 
-		  /* Unregister */
-		  r->on_unregister(context, reg);
+			  LOGW("failcount topped, unregistering");
+			  /* Unregister */
+			  r->on_unregister(context, reg);
+		  }
 	  }
 
 	  /* Release registration, we don't hold it anymore.
@@ -700,6 +713,7 @@ coap_handle_failed_notify(coap_context_t *context,
 
 	  return;
   }
+  else LOGW("Problem in handle failed notify, reg found NULL");
 
   ;
 #else /* WITH_CONTIKI */
@@ -747,6 +761,9 @@ coap_handle_failed_notify(coap_context_t *context,
 void
 coap_registration_release(coap_resource_t *res,
 		/*coap_context_t *context,*/ coap_registration_t *r) {
+
+	if (res == NULL) return;
+
 	/*
 	 * FIXME
 	 * We make it aware that the object is within a list
@@ -756,25 +773,37 @@ coap_registration_release(coap_resource_t *res,
 	//coap_resource_t *res;
 	coap_registration_t *p;
 
+	if (r->refcnt == 0) {
+		LOGE("About to release resource with refcount already 0, inconsistent state !!");
+		exit(1);
+	}
+
 	assert(r);
 	r->refcnt--;
+
+	LOGI("Releasing registration, old refcnt%d, new %d", r->refcnt+1, r->refcnt);
 	if (r->refcnt == 0) {
 		/* Unfortunately as it is a single-linked list
 		 * for the deletion we must restart from the head
 		 * deletion O(n)..
 		 */
 		//res = coap_get_resource_from_key(context, r->reskey);
-		if (res != NULL) {
+		/*if (res->subscribers == r)
+			res->subscribers = r->next;
+		else {
 			p = res->subscribers;
 			while (p != NULL && p->next != r) p = p->next;
 			if (p != NULL) p->next = r->next;
-		}
+		}*/
+		LL_DELETE(res->subscribers, r);
 		free(r);
+		LOGI("Freed subscription!");
 	}
 }
 
 coap_registration_t *
 coap_registration_checkout(coap_registration_t *r) {
+	LOGI("Checking out registration");
 	assert(r);
 	r->refcnt++;
 	return r;
@@ -788,6 +817,17 @@ coap_add_registration(coap_resource_t *resource,
 	coap_registration_t *s = NULL, *found = NULL;
 	assert(peer);
 
+	unsigned char addrstr[20];
+	coap_print_addr(peer, addrstr, 20);
+	LOGW("Here I print it..");
+	LOGW("Adding registration to %s", addrstr);
+
+	/* Note: coap_find_registration checks on the equality of peer,
+	 * but if a registration in not anymore valid even if it has the
+	 * same peer, this function will return NOT FOUND. Indeed a
+	 * registration with a topped failcount  i.e. invalid is still in
+	 * memory but from a logic viewpoint it does not exist anymore.
+	 */
 	found = coap_find_registration(resource, peer);
 	/* Replace, remember that we must not move it because
 	 * the value of this pointer identifies the observer at
@@ -804,6 +844,7 @@ coap_add_registration(coap_resource_t *resource,
 	}
 	/* Add, prepending. */
 	else {
+		LOGI("Adding registration");
 		s = coap_registration_init(resource->key, *peer, token);
 		s->next = resource->subscribers;
 		/* Generate a new ticket,
@@ -818,10 +859,14 @@ coap_add_registration(coap_resource_t *resource,
 	return s;
 }
 
-
+/* Quite deprecated and untested at the moment,
+ * might not respect the program design..
+ */
 void
 coap_delete_registration(coap_resource_t *resource,
 		coap_address_t *peer, str *token) {
+
+	LOGI("Deleting registration");
 
 	coap_registration_t *s;
 
@@ -835,6 +880,9 @@ coap_delete_registration(coap_resource_t *resource,
 	}
 }
 
+/* Well note the condition.. it checks both the peer
+ * and the validity flag!
+ */
 coap_registration_t *
 coap_find_registration(coap_resource_t *resource,
 		coap_address_t *peer) {
@@ -842,9 +890,16 @@ coap_find_registration(coap_resource_t *resource,
 	coap_registration_t *s = NULL;
 
 	s = resource->subscribers;
+	if (s==NULL) LOGI("Subscribers list NULL");
 	while (s != NULL) {
-		if (coap_address_equals(&(s->subscriber), peer) == 1)
+		if ( coap_address_equals(&(s->subscriber), peer) == 1
+				&&  !(s->invalid)  )
 			break;
+		if ( coap_address_equals(&(s->subscriber), peer) == 1 )
+			LOGI("Peers were equal but registration invalid");
+		else if ( !(s->invalid) )
+			LOGI("Registration is valid but peers differ");
+		else LOGI("Problem for both");
 		s = s->next;
 	}
 

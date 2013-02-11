@@ -16,8 +16,9 @@ coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token) {
 
 	s->next = NULL;
 	s->refcnt = 0;
+	s->invalid = 0;
 	memcpy(s->reskey, reskey, 4);
-	memcpy(&s->subscriber, &sub, sizeof(coap_address_t));
+	memcpy(&(s->subscriber), &sub, sizeof(coap_address_t));
 
 	//we've declared the token as an array here
 	if (token && token->length) {

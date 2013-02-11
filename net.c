@@ -35,6 +35,7 @@
 #include "encode.h"
 #include "net.h"
 #include "asynchronous.h"
+#include "subscribe.h"
 
 #ifndef WITH_CONTIKI
 
@@ -422,6 +423,32 @@ coap_tid_t
 coap_send_impl(coap_context_t *context, 
 	       const coap_address_t *dst,
 	       coap_pdu_t *pdu) {
+
+	LOGI("Entering coap_send_impl");
+/*
+	if (pdu!=NULL) {
+		unsigned char ostr[50];
+		coap_opt_iterator_t opt_iter;
+		coap_opt_t *odb = coap_check_option(pdu,
+				COAP_OPTION_TOKEN, &opt_iter);
+		if (odb != NULL) {
+			unsigned char *val = coap_opt_value(odb);
+			if (val == NULL)
+				LOGI("option val null");
+			unsigned short len = coap_opt_length(odb);
+			LOGI("Len%d", len);
+			memcpy(ostr, val, len);
+			ostr[len] = NULL;
+			int yy = 0;
+			while (ostr[yy]!=NULL) {
+				LOGI("%c", ostr[yy]);
+				yy++;
+			}
+		}
+	}
+*/
+	printpdu(pdu);
+
   ssize_t bytes_written;
   coap_tid_t id = COAP_INVALID_TID;
 
@@ -533,6 +560,7 @@ coap_send_confirmed(coap_context_t *context,
     return COAP_INVALID_TID;
   }
 
+  LOGI("Sent confirmable message id%d mid%d", node->id, pdu->hdr->id);
   
   prng((unsigned char *)&r,sizeof(r));
   coap_ticks(&now);
@@ -570,6 +598,13 @@ coap_send_confirmed(coap_context_t *context,
   }
 #endif /* WITH_CONTIKI */
 
+  coap_queue_t *scroll = NULL;
+  scroll = context->sendqueue;
+  while (scroll != NULL) {
+	  //LOGI("Sendqueue print after insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
+	  scroll = scroll->next;
+  }
+
   /* returns the transaction id */
   return node->id;
 }
@@ -587,6 +622,9 @@ coap_notify_confirmed(coap_context_t *context,
 		 * therefore the bound cases of ACK_TIMEOUT*1
 		 * and ACK_TIMEOUT*ACK_RANDOM factor collide.
 		 */
+
+	LOGI("Sending confirmable notification");
+
   coap_queue_t *node;
   coap_tick_t now;
   int r;
@@ -600,6 +638,7 @@ coap_notify_confirmed(coap_context_t *context,
   /* assigns a new transaction ID and sends, returns the transaction id */
   node->id = coap_send_impl(context, dst, pdu);
   if (COAP_INVALID_TID == node->id) {
+	LOGI("Invalid TID, error sending PDU");
     debug("coap_notify: error sending pdu\n");
     coap_free_node(node);
     return COAP_INVALID_TID;
@@ -623,9 +662,23 @@ coap_notify_confirmed(coap_context_t *context,
    * coap_notify_confirmed( , , , coap_registration_checkout(reg) ) */
   node->reg = reg;
 
+  coap_queue_t *scroll = NULL;
+  scroll = context->sendqueue;
+  while (scroll != NULL) {
+	  //LOGI("Sendqueue print before insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
+	  scroll = scroll->next;
+  }
+
   /* Insert the node into the sendqueue. */
   assert(&context->sendqueue);
   coap_insert_node(&context->sendqueue, node, _order_timestamp);
+  LOGI("New transaction in the sendqueue id%d, pdumid%d", node->id, pdu->hdr->id);
+
+  scroll = context->sendqueue;
+  while (scroll != NULL) {
+	  //LOGI("Sendqueue print after insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
+	  scroll = scroll->next;
+  }
 
   /* returns the transaction id */
   return node->id;
@@ -646,6 +699,8 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
 #ifndef WITH_CONTIKI
     debug("** retransmission #%d of transaction %d\n",
 	  node->retransmit_cnt, ntohs(node->pdu->hdr->id));
+    LOGI("** retransmission #%d of transaction %d nodeid%d\n",
+	  node->retransmit_cnt, /*ntohs(*/node->pdu->hdr->id/*)*/, node->id);
 #else /* WITH_CONTIKI */
     debug("** retransmission #%u of transaction %u\n",
 	  node->retransmit_cnt, uip_ntohs(node->pdu->hdr->id));
@@ -1062,7 +1117,10 @@ wellknown_response(coap_context_t *context, coap_pdu_t *request) {
   (((Pdu)->hdr->code == COAP_REQUEST_GET) && is_wkc(Key))
 
 void
-handle_request(coap_context_t *context, coap_queue_t *node) {      
+handle_request(coap_context_t *context, coap_queue_t *node) {
+
+	LOGI("INCOMING REQUEST id%d mid%d", node->id, node->pdu->hdr->id);
+
   coap_method_handler_t h = NULL;
   coap_pdu_t *response = NULL;
   coap_opt_filter_t opt_filter;
@@ -1171,6 +1229,8 @@ handle_request(coap_context_t *context, coap_queue_t *node) {
 static inline void
 handle_response(coap_context_t *context, 
 		coap_queue_t *sent, coap_queue_t *rcvd) {
+
+	LOGI("INCOMING RESPONSE");
   
   /* Call application-specific reponse handler when available.  If
    * not, we must acknowledge confirmable messages. */
@@ -1206,7 +1266,9 @@ coap_dispatch( coap_context_t *context ) {
   coap_queue_t *temp, *btemp;
   coap_registration_handler_t h = NULL;
   coap_address_t dest;
+  int queuefound = 0;
 
+  int gotrst = 0;
 
   if (!context)
     return;
@@ -1225,12 +1287,19 @@ coap_dispatch( coap_context_t *context ) {
       goto cleanup;
     }
     
+    printpdu(rcvd->pdu);
+
     switch ( rcvd->pdu->hdr->type ) {
     case COAP_MESSAGE_ACK:
-      /* find transaction in sendqueue to stop retransmission */
-      coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
 
-      if (sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
+      LOGI("INCOMING ACK mid%d", rcvd->pdu->hdr->id);
+
+      /* find transaction in sendqueue to stop retransmission */
+      /* Careful that sent could be != NULL even if no element has
+       * been found. */
+      queuefound = coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
+
+      if (queuefound && sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
 		  /* We now have in sent the entry of the queue that has just been
 		   * detached from the linked list. Though if we sent a normal response
 		   * and not a notification, the reg pointer will be NULL; check that,
@@ -1240,11 +1309,25 @@ coap_dispatch( coap_context_t *context ) {
 		   * had been created (specifically coap_send_confirmed()
 		   * and coap_notify() functions).
 		   */
-    	  sent->reg->fail_cnt = 0;
+    	  LOGI("Found observe-related transaction id%d mid%d in sendqueue facing ACK id%d mid%d",
+    			  sent->id, sent->pdu->hdr->id, rcvd->id, rcvd->pdu->hdr->id);
+    	  /* Have to protect to ACK that arrive late, when the failcount
+    	   * has already topped and the registration is still in memory and
+    	   * in the process of being destroyed. Cannot touch it anymore when is
+    	   * being destroyed!
+    	   * Still, it is acked and since we destroy the transaction
+    	   * we have to release the pointer.
+    	   */
+    	  if (sent->reg->fail_cnt <= COAP_OBS_MAX_FAIL)
+    		  sent->reg->fail_cnt = 0;
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
     	  if (res != NULL)
     		  coap_registration_release(res, sent->reg);
       }
+      else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing ACK id%d mid%d",
+    		  rcvd->id, rcvd->pdu->hdr->id);
+      else LOGI("Not found any transaction in sendqueue facing ACK id%d mid%d",
+    		  rcvd->id, rcvd->pdu->hdr->id);
 
       if (rcvd->pdu->hdr->code == 0)
 	goto cleanup;
@@ -1255,6 +1338,10 @@ coap_dispatch( coap_context_t *context ) {
       break;
 
     case COAP_MESSAGE_RST :
+
+    	LOGI("INCOMING RST mid%d", rcvd->pdu->hdr->id);
+    	gotrst = 1;
+
       /* We have sent something the receiver disliked, so we remove
        * not only the transaction but also the subscriptions we might
        * have. */
@@ -1273,9 +1360,9 @@ coap_dispatch( coap_context_t *context ) {
        */
 
       /* Find transaction in sendqueue to stop retransmission */
-      coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
+      queuefound = coap_remove_from_queue(&context->sendqueue, rcvd->id, &sent);
 
-      if (sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
+      if (queuefound && sent != NULL && sent->reg != NULL) { //Yes, C uses short-circuit evaluation
     	  /* A transaction for this message ID has been found;
     	   * It's a RST and therefore we should not only delete this
     	   * transaction, but also trigger a stop of the stream. This work
@@ -1283,15 +1370,24 @@ coap_dispatch( coap_context_t *context ) {
     	   * with the resource and therefore we must first
     	   * identify the resource using sent->reg.
     	   */
+    	  LOGI("Found observe-related transaction id%d mid%d in sendqueue facing RST id%d mid%d",
+    			  sent->id, sent->pdu->hdr->id, rcvd->id, rcvd->pdu->hdr->id);
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
-    	  if (res != NULL &&
-    			  (coap_registration_handler_t*)res->on_unregister != NULL) {
-    		  res->on_unregister(context, sent->reg);
+    	  if (res != NULL ) {
+
+    		  if ((coap_registration_handler_t*)res->on_unregister != NULL
+    				  && !(sent->reg->invalid))
+    			  res->on_unregister(context, sent->reg);
+
 			  /* Release because the pointer that was in the sendqueue's
 			   * transaction is now gone!
 			   */
 			  coap_registration_release(res, sent->reg);
     	  }
+          else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing RST id%d mid%d",
+        		  rcvd->id, rcvd->pdu->hdr->id);
+          else LOGI("Not found any transaction in sendqueue facing RST id%d mid%d",
+        		  rcvd->id, rcvd->pdu->hdr->id);
       }
 
       break;
@@ -1324,6 +1420,7 @@ coap_dispatch( coap_context_t *context ) {
       break;
     }
    
+    if (gotrst == 0) {
     /* Pass message to upper layer if a specific handler was
      * registered for a request that should be handled locally. */
     if (handle_locally(context, rcvd)) {
@@ -1333,9 +1430,11 @@ coap_dispatch( coap_context_t *context ) {
 	handle_response(context, sent, rcvd);
       else {
 	debug("dropped message with invalid code\n");
+	LOGI("dropped message with invalid code");
 	coap_send_message_type(context, &rcvd->remote, rcvd->pdu, 
 				 COAP_MESSAGE_RST);
       }
+    }
     }
     
   cleanup:
@@ -1394,3 +1493,89 @@ PROCESS_THREAD(coap_retransmit_process, ev, data)
 /*---------------------------------------------------------------------------*/
 
 #endif /* WITH_CONTIKI */
+
+unsigned int
+printit( const unsigned char *data, unsigned int len,
+		unsigned char *result, unsigned int buflen, int encode_always ) {
+  const unsigned char hex[] = "0123456789ABCDEF";
+  unsigned int cnt = 0;
+
+  if (len == 0) {
+    *result++ = '\\';
+    *result++ = 'x';
+    *result++ = hex[0];
+    cnt += 3;
+    goto finish;
+  }
+
+  while ( len && (cnt < buflen-1) ) {
+    if ( !encode_always && isprint( *data ) ) {
+      *result++ = *data;
+      ++cnt;
+    } else {
+      if ( cnt+4 < buflen-1 ) {
+	*result++ = '\\';
+	*result++ = 'x';
+	*result++ = hex[(*data & 0xf0) >> 4];
+	*result++ = hex[*data & 0x0f ];
+	cnt += 4;
+      } else
+	break;
+    }
+
+    ++data; --len;
+  }
+
+ finish:
+
+  *result = '\0';
+  return cnt;
+}
+
+
+printpdu(const coap_pdu_t *pdu) {
+  unsigned char buf[COAP_MAX_PDU_SIZE]; /* need some space for output creation */
+  int encode = 0;
+
+  LOGI("v:%d t:%d oc:%d c:%d id:%u",
+	  pdu->hdr->version, pdu->hdr->type,
+	  pdu->hdr->optcnt, pdu->hdr->code, ntohs(pdu->hdr->id));
+
+  /* show options, if any */
+  if (pdu->hdr->optcnt) {
+    coap_opt_iterator_t opt_iter;
+    coap_option_iterator_init((coap_pdu_t *)pdu, &opt_iter, COAP_OPT_ALL);
+
+    while (coap_option_next(&opt_iter)) {
+
+
+      if (opt_iter.type == COAP_OPTION_URI_PATH ||
+	  opt_iter.type == COAP_OPTION_PROXY_URI ||
+	  opt_iter.type == COAP_OPTION_URI_HOST ||
+	  opt_iter.type == COAP_OPTION_LOCATION_PATH ||
+	  opt_iter.type == COAP_OPTION_LOCATION_QUERY ||
+	  opt_iter.type == COAP_OPTION_URI_PATH ||
+	  opt_iter.type == COAP_OPTION_URI_QUERY) {
+	encode = 0;
+      } else {
+	encode = 1;
+      }
+
+      if (printit(COAP_OPT_VALUE(opt_iter.option),
+			 COAP_OPT_LENGTH(opt_iter.option),
+			 buf, sizeof(buf), encode ))
+	LOGI("opt%d: '%s',", opt_iter.type, buf);
+    }
+
+  }
+
+  if (pdu->data < (unsigned char *)pdu->hdr + pdu->length) {
+    printit(pdu->data,
+		   (unsigned char *)pdu->hdr + pdu->length - pdu->data,
+		   buf, sizeof(buf), 0 );
+    LOGI("data: %s", buf);
+  }
+
+}
+
+
