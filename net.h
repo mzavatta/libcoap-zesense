@@ -40,8 +40,9 @@
 
 //#include "asynchronous.h"
 
-#include "ze_coap_reqbuf.h"
+//#include "ze_streaming_manager.h"
 #include "ze_sm_reqbuf.h"
+#include "ze_sm_resbuf.h"
 
 
 struct coap_queue_t;
@@ -137,7 +138,7 @@ typedef struct coap_context_t {
    * Manager communication, pointers to two
    * buffers
    */
-  ze_coap_request_buf_t *notbuf;
+  ze_sm_response_buf_t *notbuf;
   ze_sm_request_buf_t *smreqbuf;
 
 

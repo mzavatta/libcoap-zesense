@@ -49,20 +49,23 @@ typedef struct coap_registration_t {
 
   	/* TODO: some strange stuff on Entity Tags */
 
-  	/* observe option value sequence number,
-  	 * actually there is a global one in coap_context_t */
-  	//unsigned char seq_num[2];
+  	/* data sessio parameters
+  	 * observe option value sequence number,
+  	 * as per draft-loreto-core-coap-streaming-00 */
+  	short notcnt;
+
+  	/* sender report, stream control parameters */
+  	int srready;
+  	long ntptwin;
+  	int rtptwin;
+  	int octcount;
+  	int packcount;
+
+  	int last_sr_octcount;
+  	int last_sr_packcount;
 
 } coap_registration_t;
 
-typedef union coap_ticket_u coap_ticket_t;
-union coap_ticket_u {
-	/* Ticket corresponding to the underlying registration.*/
-	coap_registration_t *reg;
-
-	/* Ticket corresponding to the underlying asynchronous request. */
-	coap_tid_t tid;
-};
 
 coap_registration_t *
 coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token);

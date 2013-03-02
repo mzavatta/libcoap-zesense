@@ -623,7 +623,7 @@ coap_notify_confirmed(coap_context_t *context,
 		 * and ACK_TIMEOUT*ACK_RANDOM factor collide.
 		 */
 
-	LOGI("Sending confirmable notification");
+	LOGI("Sending confirmable notification indeed type = %d", pdu->hdr->type);
 
   coap_queue_t *node;
   coap_tick_t now;

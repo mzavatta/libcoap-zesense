@@ -17,6 +17,17 @@ coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token) {
 	s->next = NULL;
 	s->refcnt = 0;
 	s->invalid = 0;
+
+	s->notcnt = (short)rand(); //randomized RTP-like
+
+	s->srready = 0;
+	s->ntptwin = 0;
+	s->rtptwin = 0;
+	s->octcount = 0;
+	s->packcount = 0;
+	s->last_sr_octcount = 0;
+	s->last_sr_packcount = 0;
+
 	memcpy(s->reskey, reskey, 4);
 	memcpy(&(s->subscriber), &sub, sizeof(coap_address_t));
 

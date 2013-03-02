@@ -70,6 +70,9 @@
 
 #define COAP_OPTION_SUBSCRIPTION  6 /* E, empty/uint, 0 B/0-2 B, (none) */
 
+/* option types from draft-loreto-core-coap-streaming-00 */
+#define COAP_OPTION_STREAMING		23
+
 /* selected option types from draft-core-block-04 */
 
 #define COAP_OPTION_BLOCK2       23 /* C, uint, 0--3 B, (none) */

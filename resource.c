@@ -817,10 +817,10 @@ coap_add_registration(coap_resource_t *resource,
 	coap_registration_t *s = NULL, *found = NULL;
 	assert(peer);
 
-	unsigned char addrstr[20];
-	coap_print_addr(peer, addrstr, 20);
-	LOGW("Here I print it..");
-	LOGW("Adding registration to %s", addrstr);
+	char addrstr[INET_ADDRSTRLEN]; // space to hold the IPv4 string
+	struct sockaddr_in sa; // pretend this is loaded with something
+	inet_ntop(AF_INET, &(peer->addr.sin.sin_addr), addrstr, INET_ADDRSTRLEN);
+	LOGW("Adding registration to: %s : %d", addrstr, peer->addr.sin.sin_port);
 
 	/* Note: coap_find_registration checks on the equality of peer,
 	 * but if a registration in not anymore valid even if it has the
