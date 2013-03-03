@@ -56,7 +56,7 @@ typedef struct coap_registration_t {
 
   	/* sender report, stream control parameters */
   	int srready;
-  	long ntptwin;
+  	uint64_t ntptwin;
   	int rtptwin;
   	int octcount;
   	int packcount;

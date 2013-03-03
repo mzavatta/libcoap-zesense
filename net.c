@@ -449,6 +449,8 @@ coap_send_impl(coap_context_t *context,
 */
 	printpdu(pdu);
 
+	LOGI("ended printing");
+
   ssize_t bytes_written;
   coap_tid_t id = COAP_INVALID_TID;
 
