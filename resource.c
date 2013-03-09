@@ -677,29 +677,27 @@ coap_handle_failed_notify(coap_context_t *context,
 
 #ifndef WITH_CONTIKI
 
-  LOGI("Handling failed notify");
-
   if (reg != NULL) {
 
+	  /* Find resource. */
+	  r = coap_get_resource_from_key(context, reg->reskey);
+
 	  /* If fail count already > COAP_OBS_MAX_FAIL,
-	   * somebody else has taken care of unregistering the
-	   * whole thing, so we just say bye bye.
-	   * Remember to release though!
+	   * somebody else has taken care of the
+	   * unregistration procedure.
+	   * Remember to release though,
 	   */
 	  /* TODO: could convert it to a "freezed"
 	   * or "valid" flag. */
 	  if (reg->fail_cnt <= COAP_OBS_MAX_FAIL) {
 		  /* Increment fail count. */
 		  reg->fail_cnt++;
+		  LOGI("Incremented failcount, now %d", reg->fail_cnt);
 
-		  /* Find resource. */
-		  r = coap_get_resource_from_key(context, reg->reskey);
-
-		  LOGI("Checking failcount, now %d", reg->fail_cnt);
 		  /* If failcount has topped, unregister the observer. */
 		  if (reg->fail_cnt > COAP_OBS_MAX_FAIL) {
 
-			  LOGW("failcount topped, unregistering");
+			  LOGW("Failcount topped, unregistering");
 			  /* Unregister */
 			  r->on_unregister(context, reg);
 		  }
@@ -774,14 +772,14 @@ coap_registration_release(coap_resource_t *res,
 	coap_registration_t *p;
 
 	if (r->refcnt == 0) {
-		LOGE("About to release resource with refcount already 0, inconsistent state !!");
+		LOGE("About to release resource with ref count already 0, inconsistent state!!");
 		exit(1);
 	}
 
 	assert(r);
 	r->refcnt--;
+	LOGI("Released registration, old ref count:%d, new: %d", r->refcnt+1, r->refcnt);
 
-	LOGI("Releasing registration, old refcnt%d, new %d", r->refcnt+1, r->refcnt);
 	if (r->refcnt == 0) {
 		/* Unfortunately as it is a single-linked list
 		 * for the deletion we must restart from the head
@@ -796,16 +794,16 @@ coap_registration_release(coap_resource_t *res,
 			if (p != NULL) p->next = r->next;
 		}*/
 		LL_DELETE(res->subscribers, r);
+		LOGI("Freeing registration");
 		free(r);
-		LOGI("Freed subscription!");
 	}
 }
 
 coap_registration_t *
 coap_registration_checkout(coap_registration_t *r) {
-	LOGI("Checking out registration");
 	assert(r);
 	r->refcnt++;
+	LOGI("Checked out registration, new ref count:%d", r->refcnt);
 	return r;
 }
 

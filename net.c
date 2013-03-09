@@ -424,7 +424,6 @@ coap_send_impl(coap_context_t *context,
 	       const coap_address_t *dst,
 	       coap_pdu_t *pdu) {
 
-	LOGI("Entering coap_send_impl");
 /*
 	if (pdu!=NULL) {
 		unsigned char ostr[50];
@@ -447,9 +446,10 @@ coap_send_impl(coap_context_t *context,
 		}
 	}
 */
-	printpdu(pdu);
 
-	LOGI("ended printing");
+  LOGI("--- Sent packet -----------");
+  printpdu(pdu);
+  LOGI("---------------------------");
 
   ssize_t bytes_written;
   coap_tid_t id = COAP_INVALID_TID;
@@ -562,7 +562,7 @@ coap_send_confirmed(coap_context_t *context,
     return COAP_INVALID_TID;
   }
 
-  LOGI("Sent confirmable message id%d mid%d", node->id, pdu->hdr->id);
+  LOGI("Sent CON mess id%d, new outstanding transaction id%d", pdu->hdr->id, node->id);
   
   prng((unsigned char *)&r,sizeof(r));
   coap_ticks(&now);
@@ -600,13 +600,6 @@ coap_send_confirmed(coap_context_t *context,
   }
 #endif /* WITH_CONTIKI */
 
-  coap_queue_t *scroll = NULL;
-  scroll = context->sendqueue;
-  while (scroll != NULL) {
-	  //LOGI("Sendqueue print after insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
-	  scroll = scroll->next;
-  }
-
   /* returns the transaction id */
   return node->id;
 }
@@ -624,8 +617,6 @@ coap_notify_confirmed(coap_context_t *context,
 		 * therefore the bound cases of ACK_TIMEOUT*1
 		 * and ACK_TIMEOUT*ACK_RANDOM factor collide.
 		 */
-
-	LOGI("Sending confirmable notification indeed type = %d", pdu->hdr->type);
 
   coap_queue_t *node;
   coap_tick_t now;
@@ -664,23 +655,11 @@ coap_notify_confirmed(coap_context_t *context,
    * coap_notify_confirmed( , , , coap_registration_checkout(reg) ) */
   node->reg = reg;
 
-  coap_queue_t *scroll = NULL;
-  scroll = context->sendqueue;
-  while (scroll != NULL) {
-	  //LOGI("Sendqueue print before insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
-	  scroll = scroll->next;
-  }
-
   /* Insert the node into the sendqueue. */
   assert(&context->sendqueue);
   coap_insert_node(&context->sendqueue, node, _order_timestamp);
-  LOGI("New transaction in the sendqueue id%d, pdumid%d", node->id, pdu->hdr->id);
 
-  scroll = context->sendqueue;
-  while (scroll != NULL) {
-	  //LOGI("Sendqueue print after insert, this element id%d mid%d", scroll->id, scroll->pdu->hdr->id);
-	  scroll = scroll->next;
-  }
+  LOGI("Sent CON notif, mess id:%d, new outstanding transaction id:%d", pdu->hdr->id, node->id);
 
   /* returns the transaction id */
   return node->id;
@@ -714,7 +693,7 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
 
   /* no more retransmissions, remove node from system */
 
-  debug("** removed transaction %d\n", node->id);
+  debug("** transaction %d unsuccessful, removed\n", node->id);
 
 #ifndef WITHOUT_OBSERVE
   /* Check if subscriptions exist that should be canceled after
@@ -729,6 +708,10 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
     }
 
     if (node->reg != NULL)
+    	/* This takes care of the resource-specific unregistration procedure
+    	 * (if it's the first confirmable message that tops the fail count)
+    	 * as well as releasing the registration.
+    	 */
     	coap_handle_failed_notify(context, node->reg, &node->remote, &token);
   }
 #endif /* WITHOUT_OBSERVE */
@@ -1121,7 +1104,7 @@ wellknown_response(coap_context_t *context, coap_pdu_t *request) {
 void
 handle_request(coap_context_t *context, coap_queue_t *node) {
 
-	LOGI("INCOMING REQUEST id%d mid%d", node->id, node->pdu->hdr->id);
+	LOGI("Incoming REQUEST id%d mid%d", node->id, node->pdu->hdr->id);
 
   coap_method_handler_t h = NULL;
   coap_pdu_t *response = NULL;
@@ -1232,7 +1215,7 @@ static inline void
 handle_response(coap_context_t *context, 
 		coap_queue_t *sent, coap_queue_t *rcvd) {
 
-	LOGI("INCOMING RESPONSE");
+	LOGI("Incoming RESPONSE");
   
   /* Call application-specific reponse handler when available.  If
    * not, we must acknowledge confirmable messages. */
@@ -1289,12 +1272,14 @@ coap_dispatch( coap_context_t *context ) {
       goto cleanup;
     }
     
+    LOGI("--- Received packet ---------");
     printpdu(rcvd->pdu);
+	LOGI("-----------------------------");
 
     switch ( rcvd->pdu->hdr->type ) {
     case COAP_MESSAGE_ACK:
 
-      LOGI("INCOMING ACK mid%d", rcvd->pdu->hdr->id);
+      LOGI("Incoming ACK mid%d", rcvd->pdu->hdr->id);
 
       /* find transaction in sendqueue to stop retransmission */
       /* Careful that sent could be != NULL even if no element has
@@ -1341,7 +1326,7 @@ coap_dispatch( coap_context_t *context ) {
 
     case COAP_MESSAGE_RST :
 
-    	LOGI("INCOMING RST mid%d", rcvd->pdu->hdr->id);
+    	LOGI("Incoming RST mid%d", rcvd->pdu->hdr->id);
     	gotrst = 1;
 
       /* We have sent something the receiver disliked, so we remove
