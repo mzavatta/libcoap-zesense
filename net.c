@@ -447,6 +447,10 @@ coap_send_impl(coap_context_t *context,
 	}
 */
 
+	/* Good place to keep the count, based on the packet type field,
+	 * of the amount of acks, rst, req responses sent..
+	 */
+
   LOGI("--- Sent packet -----------");
   printpdu(pdu);
   LOGI("---------------------------");

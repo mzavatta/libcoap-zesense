@@ -24,7 +24,7 @@ coap_registration_init(coap_key_t reskey, coap_address_t sub, str *token) {
 	s->ntptwin = 0;
 	s->rtptwin = 0;
 	s->octcount = 0;
-	s->packcount = 0;
+	s->datapackcount = 0;
 	s->last_sr_octcount = 0;
 	s->last_sr_packcount = 0;
 

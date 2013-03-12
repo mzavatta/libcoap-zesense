@@ -59,7 +59,7 @@ typedef struct coap_registration_t {
   	uint64_t ntptwin;
   	int rtptwin;
   	int octcount;
-  	int packcount;
+  	int datapackcount;
 
   	int last_sr_octcount;
   	int last_sr_packcount;

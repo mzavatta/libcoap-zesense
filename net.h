@@ -109,7 +109,8 @@ typedef struct coap_context_t {
 #endif /* WITHOUT_ASYNC */
   coap_queue_t *sendqueue, *recvqueue;
 #ifndef WITH_CONTIKI
-  int sockfd;			/**< send/receive socket */
+  int sockfd;			/**< send/receive socket */ //5683, coap default
+  int sockfdtest; //5684
 #else /* WITH_CONTIKI */
   struct uip_udp_conn *conn;	/**< uIP connection object */
   
