@@ -45,6 +45,8 @@
 #include "ze_sm_resbuf.h"
 
 
+#define EXCHANGE_LIFETIME 248 //seconds
+
 struct coap_queue_t;
 struct coap_registration_t;
 
@@ -91,11 +93,21 @@ typedef void (*coap_response_handler_t)(struct coap_context_t  *,
 					coap_pdu_t *received,
 					const coap_tid_t id);
 
+/*
 #define COAP_MID_CACHE_SIZE 3
 typedef struct {
   unsigned char flags[COAP_MID_CACHE_SIZE];
   coap_key_t item[COAP_MID_CACHE_SIZE];
 } coap_mid_cache_t; 
+*/
+
+typedef struct {
+	struct coap_alive_mid_t *next;
+	int64_t expiry;
+	unsigned short mid;
+	coap_address_t peer;
+	int type;
+} coap_alive_mid_t;
 
 /** The CoAP stack's global state is stored in a coap_context_t object */
 typedef struct coap_context_t {
@@ -117,6 +129,9 @@ typedef struct coap_context_t {
   struct etimer retransmit_timer; /**< fires when the next packet must be sent */
   struct etimer notify_timer;     /**< used to check resources periodically */
 #endif /* WITH_CONTIKI */
+
+  coap_alive_mid_t *alive_mids;
+
 
   /**
    * The last message id that was used is stored in this field.  The

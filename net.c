@@ -36,6 +36,7 @@
 #include "net.h"
 #include "asynchronous.h"
 #include "subscribe.h"
+#include "utlist.h"
 
 #ifndef WITH_CONTIKI
 
@@ -89,6 +90,13 @@ int print_wellknown(coap_context_t *, unsigned char *, size_t *, coap_opt_t *);
 void
 coap_handle_failed_notify(coap_context_t *context,  coap_registration_t *reg,
 			  const coap_address_t *peer, const str *token);
+
+coap_alive_mid_t *
+coap_mid_alive_init();
+void
+coap_clean_expired_mids(coap_alive_mid_t *list);
+coap_alive_mid_t *
+mid_is_alive(coap_context_t *context, coap_queue_t *rcvd);
 
 int
 coap_insert_node(coap_queue_t **queue, coap_queue_t *node,
@@ -257,6 +265,9 @@ coap_new_context(const coap_address_t *listen_addr) {
    */
   c->notbuf = NULL;
   c->smreqbuf = NULL;
+
+  /* Make sure the alive mids list is NULL at startup. */
+  c->alive_mids = NULL;
 
 #ifndef WITH_CONTIKI
   c->sockfd = socket(listen_addr->addr.sa.sa_family, SOCK_DGRAM, 0);
@@ -450,6 +461,8 @@ coap_send_impl(coap_context_t *context,
 	/* Good place to keep the count, based on the packet type field,
 	 * of the amount of acks, rst, req responses sent..
 	 */
+
+
 
   LOGI("--- Sent packet -----------");
   printpdu(pdu);
@@ -1168,6 +1181,13 @@ handle_request(coap_context_t *context, coap_queue_t *node) {
       sizeof(resource->handler)/sizeof(coap_method_handler_t))
     h = resource->handler[node->pdu->hdr->code - 1];
   
+  /*
+   * I THINK THE LOGIC OF THIS REQUEST HANDLER IS DEFINITELY
+   * NOT OPTIMAL. TWEAK IT TO MAKE IT WORK BUT CONSIDER A
+   * RADICAL REWORK IN THE FUTURE
+   */
+
+
   /* there is a registered handler */
   if (h) {
 		debug("call custom handler for resource 0x%02x%02x%02x%02x\n",
@@ -1187,14 +1207,43 @@ handle_request(coap_context_t *context, coap_queue_t *node) {
 			  }
 
 			  h(context, resource, &node->remote, node->pdu, &token, response);
-			  if ((response->hdr->type != COAP_MESSAGE_NON ||
-			  (response->hdr->code >= 64
-			   && !coap_is_mcast(&node->local))) && response != NULL) {
+
+			  /* TODO would be convenient to add to the alive mids
+			   * before actually processing the request in its handler h(.)
+			   * and later, when you know if that handler caused an RST or ACK
+			   * updating the record with this info.
+			   */
+
+			  /* Not strictly necessary but helpful. */
+		      coap_clean_expired_mids(context->alive_mids);
+
+			  coap_alive_mid_t *newmid = coap_mid_alive_init();
+			  newmid->expiry = get_ntp() + EXCHANGE_LIFETIME*1000000000LL;
+			  newmid->peer = node->remote;
+			  newmid->mid = node->pdu->hdr->id;
+			  newmid->type = -1; //request was NON, ACK/RST to this request undefined
+			  // if response is NON it means that the request was NON
+			  // so if response is NON, don't touch it anymore
+			  // if response is ACK or RST, complete the record with this info
+			  if (response->hdr->type == COAP_MESSAGE_ACK)
+				  newmid->type = COAP_MESSAGE_ACK;
+			  else if (response->hdr->type == COAP_MESSAGE_RST)
+				  newmid->type = COAP_MESSAGE_RST;
+			  else if (response->hdr->type == COAP_MESSAGE_CON)
+				  LOGW("undefined situation, answering a CON message with CON response"
+						  "and not with ACK");
+			  // in any case register the mid in the list
+			  LL_APPEND(context->alive_mids, newmid);
+
+			  if ( (response->hdr->type != COAP_MESSAGE_NON ||
+			  (response->hdr->code >= 64  && !coap_is_mcast(&node->local)) ) /*&& response != NULL*/) {
+
 				if (coap_send(context, &node->remote, response) == COAP_INVALID_TID) {
 				  debug("cannot send response for message %d\n", node->pdu->hdr->id);
 				}
 			  }
-			  coap_delete_pdu(response);
+			  //if (response != NULL)
+				  coap_delete_pdu(response);
 		} else {
 		  warn("cannot generate response\r\n");
 		}
@@ -1244,6 +1293,45 @@ handle_locally(coap_context_t *context, coap_queue_t *node) {
   return 1;
 }
 
+coap_alive_mid_t *
+coap_mid_alive_init() {
+	LOGW("initializing alive mid record");
+	coap_alive_mid_t *temp = malloc(sizeof(coap_alive_mid_t));
+	if (temp == NULL) return NULL;
+	memset(temp, 0, sizeof(coap_alive_mid_t));
+	temp->next = NULL;
+	return temp;
+}
+
+void
+coap_clean_expired_mids(coap_alive_mid_t *list) {
+	int64_t now = get_ntp();
+	coap_alive_mid_t *c, *p;
+	LL_FOREACH_SAFE(list, c, p) {
+		if(c->expiry < now) {
+			LOGW("mid:%d expired, deleting", ntohs(c->mid));
+			LL_DELETE(list, c);
+			free(c);
+		}
+	}
+}
+
+/* Compares the source address, too, as per CoAP standard. */
+coap_alive_mid_t *
+mid_is_alive(coap_context_t *context, coap_queue_t *rcvd) {
+	LOGW("checking if the just received mid is alive");
+	coap_alive_mid_t *t;
+	LL_FOREACH(context->alive_mids, t) {
+		if ( rcvd->pdu->hdr->id == t->mid &&
+				coap_address_equals(&rcvd->remote, &t->peer) ) {
+			LOGW("mid:%d was found alive against:%d", ntohs(rcvd->pdu->hdr->id), ntohs(t->mid));
+			return t;
+		}
+	}
+	return NULL;
+}
+
+
 void
 coap_dispatch( coap_context_t *context ) {
   coap_queue_t *rcvd = NULL, *sent = NULL;
@@ -1256,8 +1344,9 @@ coap_dispatch( coap_context_t *context ) {
   coap_registration_handler_t h = NULL;
   coap_address_t dest;
   int queuefound = 0;
+  coap_alive_mid_t *t;
 
-  int gotrst = 0;
+  //int gotrst = 0;
 
   if (!context)
     return;
@@ -1331,7 +1420,7 @@ coap_dispatch( coap_context_t *context ) {
     case COAP_MESSAGE_RST :
 
     	LOGI("Incoming RST mid%d", rcvd->pdu->hdr->id);
-    	gotrst = 1;
+    	//gotrst = 1;
 
       /* We have sent something the receiver disliked, so we remove
        * not only the transaction but also the subscriptions we might
@@ -1385,33 +1474,64 @@ coap_dispatch( coap_context_t *context ) {
 
     case COAP_MESSAGE_NON :	/* check for unknown critical options */
       if (coap_option_check_critical(context, rcvd->pdu, opt_filter) == 0)
-	goto cleanup;
+    	  goto cleanup;
+
+      coap_clean_expired_mids(context->alive_mids);
+      t = mid_is_alive(context, rcvd);
+      if ( t != NULL ) { //duplicate
+    	  /* Request already processed and no need to send ACK/RST:
+    	   * goto cleanup, skipping the request handlers. */
+    	  goto cleanup;
+      }
+
       break;
 
     case COAP_MESSAGE_CON :	/* check for unknown critical options */
       if (coap_option_check_critical(context, rcvd->pdu, opt_filter) == 0) {
-
-	/* FIXME: send response only if we have received a request. Otherwise, 
-	 * send RST. */
-	response = 
-	  coap_new_error_response(rcvd->pdu, COAP_RESPONSE_CODE(402), opt_filter);
-
-	if (!response)
-	  warn("coap_dispatch: cannot create error reponse\n");
-	else {
-	  if (coap_send(context, &rcvd->remote, response) 
-	      == COAP_INVALID_TID) {
-	    warn("coap_dispatch: error sending reponse\n");
-	  }
-          coap_delete_pdu(response);
-	}	 
-	
-	goto cleanup;
+		/* FIXME: send response only if we have received a request. Otherwise,
+		 * send RST. */
+		response =
+		  coap_new_error_response(rcvd->pdu, COAP_RESPONSE_CODE(402), opt_filter);
+		if (!response)
+		  warn("coap_dispatch: cannot create error reponse\n");
+		else {
+		  if (coap_send(context, &rcvd->remote, response)
+			  == COAP_INVALID_TID)
+			warn("coap_dispatch: error sending reponse\n");
+		  coap_delete_pdu(response);
+		}
+		goto cleanup;
       }
+
+      coap_clean_expired_mids(context->alive_mids);
+      t = mid_is_alive(context, rcvd);
+      if ( t != NULL ) { // treat as duplicate
+    	  /* Request already processed but we need to send ACK/RST:
+    	   * if the first time it arrived it was a CON as well, we'll know
+    	   * how we answered the first time, whether ACK or RST, and replay
+    	   * it now. But the first time might have been a NON, in which case
+    	   * in the record there won't be any indication of our reaction
+    	   * because there isn't any reaction to a NON. We decide to
+    	   * reply RST in this case, because anyway this time it's a CON
+    	   * and we have to reply something. If we ignore this the sender will retry
+    	   * transmission. */
+    	  if (t->type == COAP_MESSAGE_ACK) {
+    		  LOGW("Replaying ACK to a duplicate request");
+    		  coap_send_ack(context, &rcvd->remote, rcvd->pdu);
+    	  }
+    	  else {
+    		  LOGW("Replaying RST to a duplicate request");
+    		  coap_send_rst(context, &rcvd->remote, rcvd->pdu);
+    	  }
+
+    	  goto cleanup;
+      }
+
+
       break;
     }
-   
-    if (gotrst == 0) {
+
+    //if (gotrst == 0) { //what's that?
     /* Pass message to upper layer if a specific handler was
      * registered for a request that should be handled locally. */
     if (handle_locally(context, rcvd)) {
@@ -1426,7 +1546,7 @@ coap_dispatch( coap_context_t *context ) {
 				 COAP_MESSAGE_RST);
       }
     }
-    }
+    //}
     
   cleanup:
     coap_delete_node(sent);
