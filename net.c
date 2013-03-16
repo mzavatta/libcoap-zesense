@@ -38,6 +38,11 @@
 #include "subscribe.h"
 #include "utlist.h"
 
+#include <android/sensor.h>
+
+#include "globals_test.h"
+
+
 #ifndef WITH_CONTIKI
 
 time_t clock_offset;
@@ -458,16 +463,6 @@ coap_send_impl(coap_context_t *context,
 	}
 */
 
-	/* Good place to keep the count, based on the packet type field,
-	 * of the amount of acks, rst, req responses sent..
-	 */
-
-
-
-  LOGI("--- Sent packet -----------");
-  printpdu(pdu);
-  LOGI("---------------------------");
-
   ssize_t bytes_written;
   coap_tid_t id = COAP_INVALID_TID;
 
@@ -479,6 +474,34 @@ coap_send_impl(coap_context_t *context,
 
   if (bytes_written >= 0) {
     coap_transaction_id(dst, pdu, &id);
+
+
+    LOGI("--- Sent packet -----------");
+    printpdu(pdu);
+    LOGI("---------------------------");
+
+
+	UDP_OUT_counter++;
+	UDP_OUT_octects += bytes_written;
+
+	if (pdu->hdr->type == COAP_MESSAGE_NON) {
+		OUT_NON_counter++;
+		OUT_NON_octects += bytes_written;
+	}
+	else if (pdu->hdr->type == COAP_MESSAGE_CON) {
+		OUT_CON_counter++;
+		OUT_CON_octects += bytes_written;
+	}
+	else if (pdu->hdr->type == COAP_MESSAGE_ACK) {
+		OUT_ACK_counter++;
+		OUT_ACK_octects += bytes_written;
+	}
+	else if (pdu->hdr->type == COAP_MESSAGE_RST) {
+		OUT_RST_counter++;
+		OUT_RST_octects += bytes_written;
+	}
+
+
   } else {
     coap_log(LOG_CRIT, "coap_send: sendto");
   }
@@ -589,6 +612,11 @@ coap_send_confirmed(coap_context_t *context,
   node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
     (COAP_DEFAULT_RESPONSE_TIMEOUT >> 1) *
     ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);
+  /*
+  int a = 0.150 * 1024;
+  float y = rand()/(float)RAND_MAX;
+  int b = a + (a/3)*y;
+   */
   node->t += node->timeout;
 
   memcpy(&node->remote, dst, sizeof(coap_address_t));
@@ -693,6 +721,21 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
     node->retransmit_cnt++;
     node->t += ( node->timeout << node->retransmit_cnt );
     coap_insert_node( &context->sendqueue, node, _order_timestamp );
+
+    RETR_counter++;
+
+    //They'll all have our payload header..
+	ze_payload_header_t *pay = (ze_payload_header_t *)node->pdu->data;
+	if (pay->sensor_type == ASENSOR_TYPE_ACCELEROMETER)
+		ACCEL_RETR_counter++;
+	else if (pay->sensor_type == ASENSOR_TYPE_LIGHT)
+		LIGHT_RETR_counter++;
+	else if (pay->sensor_type == ASENSOR_TYPE_GYROSCOPE)
+		GYRO_RETR_counter++;
+	else if (pay->sensor_type == ASENSOR_TYPE_PROXIMITY)
+		PROX_RETR_counter++;
+
+
 
 #ifndef WITH_CONTIKI
     debug("** retransmission #%d of transaction %d\n",
@@ -988,7 +1031,7 @@ coap_remove_from_queue(coap_queue_t **queue, coap_tid_t id, coap_queue_t **node)
     return 1;
   }
 
-  /* search transaction to remove (only first occurence will be removed) */
+  /* search transaction to remove (only first occurrence will be removed) */
   q = *queue;
   do {
     p = q;
@@ -1369,6 +1412,31 @@ coap_dispatch( coap_context_t *context ) {
     printpdu(rcvd->pdu);
 	LOGI("-----------------------------");
 
+
+	/*
+	 * good place to insert here..
+	 */
+	UDP_IN_counter++;
+	UDP_IN_octects += rcvd->pdu->length; //correctly set in coap_read() to recvfrom()'s return value
+
+	if (rcvd->pdu->hdr->type == COAP_MESSAGE_NON) {
+		IN_NON_counter++;
+		IN_NON_octects += rcvd->pdu->length;
+	}
+	else if (rcvd->pdu->hdr->type == COAP_MESSAGE_CON) {
+		IN_CON_counter++;
+		IN_CON_octects += rcvd->pdu->length;
+	}
+	else if (rcvd->pdu->hdr->type == COAP_MESSAGE_ACK) {
+		IN_ACK_counter++;
+		IN_ACK_octects += rcvd->pdu->length;
+	}
+	else if (rcvd->pdu->hdr->type == COAP_MESSAGE_RST) {
+		IN_RST_counter++;
+		IN_RST_octects += rcvd->pdu->length;
+	}
+
+
     switch ( rcvd->pdu->hdr->type ) {
     case COAP_MESSAGE_ACK:
 
@@ -1479,6 +1547,7 @@ coap_dispatch( coap_context_t *context ) {
       coap_clean_expired_mids(context->alive_mids);
       t = mid_is_alive(context, rcvd);
       if ( t != NULL ) { //duplicate
+    	  Duplicate_Count++;
     	  /* Request already processed and no need to send ACK/RST:
     	   * goto cleanup, skipping the request handlers. */
     	  goto cleanup;
@@ -1506,6 +1575,7 @@ coap_dispatch( coap_context_t *context ) {
       coap_clean_expired_mids(context->alive_mids);
       t = mid_is_alive(context, rcvd);
       if ( t != NULL ) { // treat as duplicate
+    	  Duplicate_Count++;
     	  /* Request already processed but we need to send ACK/RST:
     	   * if the first time it arrived it was a CON as well, we'll know
     	   * how we answered the first time, whether ACK or RST, and replay

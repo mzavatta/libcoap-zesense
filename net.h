@@ -47,6 +47,8 @@
 
 #define EXCHANGE_LIFETIME 248 //seconds
 
+int Duplicate_Count;
+
 struct coap_queue_t;
 struct coap_registration_t;
 
