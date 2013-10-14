@@ -609,14 +609,18 @@ coap_send_confirmed(coap_context_t *context,
   node->t = now;
 
   /* add randomized RESPONSE_TIMEOUT to determine retransmission timeout */
-  node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
+  /*node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
     (COAP_DEFAULT_RESPONSE_TIMEOUT >> 1) *
-    ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);
+    ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);*/
   /*
   int a = 0.150 * 1024;
   float y = rand()/(float)RAND_MAX;
   int b = a + (a/3)*y;
    */
+  int a = 0.150 * 1024;
+  float y = rand()/(float)RAND_MAX;
+  node->timeout = a + (a/3)*y;
+  LOGW("Timeout assigned to:%d coapclk:%d", node->timeout, now);
   node->t += node->timeout;
 
   memcpy(&node->remote, dst, sizeof(coap_address_t));
@@ -687,9 +691,18 @@ coap_notify_confirmed(coap_context_t *context,
   node->t = now;
 
   /* add randomized RESPONSE_TIMEOUT to determine retransmission timeout */
-  node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
+  /*node->timeout = COAP_DEFAULT_RESPONSE_TIMEOUT * COAP_TICKS_PER_SECOND +
     (COAP_DEFAULT_RESPONSE_TIMEOUT >> 1) *
-    ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);
+    ((COAP_TICKS_PER_SECOND * (r & 0xFF)) >> 8);*/
+  /*
+  int a = 0.150 * 1024;
+  float y = rand()/(float)RAND_MAX;
+  int b = a + (a/3)*y;
+   */
+  int a = 0.150 * 1024;
+  float y = rand()/(float)RAND_MAX;
+  node->timeout = a + (a/3)*y;
+  LOGW("Timeout assigned to:%d coapclk:%d", node->timeout, now);
   node->t += node->timeout;
 
   memcpy(&node->remote, dst, sizeof(coap_address_t));
@@ -735,7 +748,10 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
 	else if (pay->sensor_type == ASENSOR_TYPE_PROXIMITY)
 		PROX_RETR_counter++;
 
-
+	/* only for testing purposes in order to distinguish at the
+	 * client side which are first-time or retransmitted packets. */
+	if (pay->packet_type == DATAPOINT)
+		pay->packet_type = DATAPOINT_RETRANSMITTED;
 
 #ifndef WITH_CONTIKI
     debug("** retransmission #%d of transaction %d\n",
@@ -778,6 +794,7 @@ coap_retransmit( coap_context_t *context, coap_queue_t *node ) {
 
   /* And finally delete the node */
   coap_delete_node( node );
+
   return COAP_INVALID_TID;
 }
 
