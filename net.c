@@ -717,7 +717,7 @@ coap_notify_confirmed(coap_context_t *context,
   assert(&context->sendqueue);
   coap_insert_node(&context->sendqueue, node, _order_timestamp);
 
-  LOGI("Sent CON notif, mess id:%d, new outstanding transaction id:%d", pdu->hdr->id, node->id);
+  LOGI("Sent CON notif, mess id:%u, new outstanding transaction id:%d", pdu->hdr->id, node->id);
 
   /* returns the transaction id */
   return node->id;
@@ -1181,7 +1181,7 @@ wellknown_response(coap_context_t *context, coap_pdu_t *request) {
 void
 handle_request(coap_context_t *context, coap_queue_t *node) {
 
-	LOGI("Incoming REQUEST id%d mid%d", node->id, node->pdu->hdr->id);
+	LOGI("Incoming REQUEST id%d mid%u", node->id, node->pdu->hdr->id);
 
   coap_method_handler_t h = NULL;
   coap_pdu_t *response = NULL;
@@ -1369,7 +1369,7 @@ coap_clean_expired_mids(coap_alive_mid_t *list) {
 	coap_alive_mid_t *c, *p;
 	LL_FOREACH_SAFE(list, c, p) {
 		if(c->expiry < now) {
-			LOGW("mid:%d expired, deleting", ntohs(c->mid));
+			LOGW("mid:%u expired, deleting", ntohs(c->mid));
 			LL_DELETE(list, c);
 			free(c);
 		}
@@ -1384,7 +1384,7 @@ mid_is_alive(coap_context_t *context, coap_queue_t *rcvd) {
 	LL_FOREACH(context->alive_mids, t) {
 		if ( rcvd->pdu->hdr->id == t->mid &&
 				coap_address_equals(&rcvd->remote, &t->peer) ) {
-			LOGW("mid:%d was found alive against:%d", ntohs(rcvd->pdu->hdr->id), ntohs(t->mid));
+			LOGW("mid:%u was found alive against:%u", ntohs(rcvd->pdu->hdr->id), ntohs(t->mid));
 			return t;
 		}
 	}
@@ -1457,7 +1457,7 @@ coap_dispatch( coap_context_t *context ) {
     switch ( rcvd->pdu->hdr->type ) {
     case COAP_MESSAGE_ACK:
 
-      LOGI("Incoming ACK mid%d", rcvd->pdu->hdr->id);
+      LOGI("Incoming ACK mid%u", rcvd->pdu->hdr->id);
 
       /* find transaction in sendqueue to stop retransmission */
       /* Careful that sent could be != NULL even if no element has
@@ -1474,7 +1474,7 @@ coap_dispatch( coap_context_t *context ) {
 		   * had been created (specifically coap_send_confirmed()
 		   * and coap_notify() functions).
 		   */
-    	  LOGI("Found observe-related transaction id%d mid%d in sendqueue facing ACK id%d mid%d",
+    	  LOGI("Found observe-related transaction id%d mid%u in sendqueue facing ACK id%d mid%u",
     			  sent->id, sent->pdu->hdr->id, rcvd->id, rcvd->pdu->hdr->id);
     	  /* Have to protect to ACK that arrive late, when the failcount
     	   * has already topped and the registration is still in memory and
@@ -1489,9 +1489,9 @@ coap_dispatch( coap_context_t *context ) {
     	  if (res != NULL)
     		  coap_registration_release(res, sent->reg);
       }
-      else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing ACK id%d mid%d",
+      else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing ACK id%d mid%u",
     		  rcvd->id, rcvd->pdu->hdr->id);
-      else LOGI("Not found any transaction in sendqueue facing ACK id%d mid%d",
+      else LOGI("Not found any transaction in sendqueue facing ACK id%d mid%u",
     		  rcvd->id, rcvd->pdu->hdr->id);
 
       if (rcvd->pdu->hdr->code == 0)
@@ -1504,7 +1504,7 @@ coap_dispatch( coap_context_t *context ) {
 
     case COAP_MESSAGE_RST :
 
-    	LOGI("Incoming RST mid%d", rcvd->pdu->hdr->id);
+    	LOGI("Incoming RST mid%u", rcvd->pdu->hdr->id);
     	//gotrst = 1;
 
       /* We have sent something the receiver disliked, so we remove
@@ -1535,7 +1535,7 @@ coap_dispatch( coap_context_t *context ) {
     	   * with the resource and therefore we must first
     	   * identify the resource using sent->reg.
     	   */
-    	  LOGI("Found observe-related transaction id%d mid%d in sendqueue facing RST id%d mid%d",
+    	  LOGI("Found observe-related transaction id%d mid%u in sendqueue facing RST id%d mid%u",
     			  sent->id, sent->pdu->hdr->id, rcvd->id, rcvd->pdu->hdr->id);
     	  res = coap_get_resource_from_key(context, sent->reg->reskey);
     	  if (res != NULL ) {
@@ -1549,9 +1549,9 @@ coap_dispatch( coap_context_t *context ) {
 			   */
 			  coap_registration_release(res, sent->reg);
     	  }
-          else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing RST id%d mid%d",
+          else if (queuefound) LOGI("Found oneshot-related transaction in sendqueue facing RST id%d mid%u",
         		  rcvd->id, rcvd->pdu->hdr->id);
-          else LOGI("Not found any transaction in sendqueue facing RST id%d mid%d",
+          else LOGI("Not found any transaction in sendqueue facing RST id%d mid%u",
         		  rcvd->id, rcvd->pdu->hdr->id);
       }
 
